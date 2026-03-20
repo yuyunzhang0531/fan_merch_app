@@ -71,6 +71,8 @@ const DRAFT_STORAGE_KEY = 'fanMerchCanvasDraft';
 const CUTOUT_LIBRARY_DB_NAME = 'fanMerchLocalAssets';
 const CUTOUT_LIBRARY_STORE = 'cutouts';
 const MAX_LOCAL_CUTOUTS = 12;
+const MOBILE_ASSET_BATCH_SIZE = 8;
+const DESKTOP_ASSET_BATCH_SIZE = 12;
 const TEXT_STYLE_PRESETS = {
     default: { fontFamily: 'Microsoft YaHei', fontWeight: '700' },
     cute: { fontFamily: 'YouYuan, Microsoft YaHei, sans-serif', fontWeight: '700' },
@@ -86,6 +88,8 @@ let pendingFile = null;
 let currentCategory = 'all';
 let currentStyle = 'all';
 let currentStickerStyle = 'all';
+let visibleTemplateCount = 0;
+let visibleStickerCount = 0;
 let authToken = localStorage.getItem('fanMerchToken') || '';
 let currentUser = {
     email: localStorage.getItem('fanMerchEmail') || '',
@@ -818,6 +822,73 @@ function escapeHtml(text) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function getAssetBatchSize() {
+    return window.matchMedia('(max-width: 768px)').matches ? MOBILE_ASSET_BATCH_SIZE : DESKTOP_ASSET_BATCH_SIZE;
+}
+
+function getPreviewAssetUrl(url) {
+    if (typeof url !== 'string' || !url.startsWith('image/')) {
+        return url;
+    }
+    return url.replace(/^image\//, 'image/previews/');
+}
+
+function shouldRenderTemplateAssets() {
+    const templateDrawer = document.querySelector('.template-drawer');
+    if (!window.matchMedia('(max-width: 768px)').matches) {
+        return true;
+    }
+    return Boolean(templateDrawer?.open);
+}
+
+function shouldRenderStickerAssets() {
+    const stickerDrawer = document.querySelector('.sticker-drawer');
+    if (!window.matchMedia('(max-width: 768px)').matches) {
+        return true;
+    }
+    return Boolean(stickerDrawer?.open);
+}
+
+function createAssetCard(name, previewUrl, originalUrl, onClick) {
+    const div = document.createElement('div');
+    div.className = 'template-card';
+
+    const img = document.createElement('img');
+    img.alt = name;
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.fetchPriority = 'low';
+    img.src = previewUrl;
+    img.draggable = false;
+    img.addEventListener('error', () => {
+        if (img.src !== originalUrl) {
+            img.src = originalUrl;
+        }
+    }, { once: true });
+    img.addEventListener('dragstart', (event) => event.preventDefault());
+
+    const title = document.createElement('p');
+    title.innerText = name;
+
+    div.appendChild(img);
+    div.appendChild(title);
+    div.onclick = (event) => {
+        event.preventDefault();
+        onClick();
+    };
+
+    return div;
+}
+
+function updateAssetLoadMoreButton(buttonId, visibleCount, totalCount, label) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    const hasMore = totalCount > visibleCount;
+    button.hidden = !hasMore;
+    button.style.display = hasMore ? 'block' : 'none';
+    button.innerText = hasMore ? `${label}（剩余 ${totalCount - visibleCount}）` : label;
 }
 
 function blobToDataUrl(blob) {
@@ -1984,47 +2055,53 @@ function renderUI() {
         return categoryMatch && styleMatch;
     });
 
+    const shouldRenderTemplates = shouldRenderTemplateAssets();
+    if (!visibleTemplateCount && shouldRenderTemplates) {
+        visibleTemplateCount = getAssetBatchSize();
+    }
+
     const templateGrid = document.getElementById('template-grid');
     templateGrid.innerHTML = '';
-    filteredTemplates.forEach((template) => {
-        const div = document.createElement('div');
-        div.className = 'template-card';
-        div.innerHTML = `<img src="${template.url}"><p>${template.name}</p>`;
-        const img = div.querySelector('img');
-        img.draggable = false;
-        img.addEventListener('dragstart', (event) => event.preventDefault());
-        div.onclick = (event) => {
-            event.preventDefault();
-            loadTemplate(template.url, template.name);
-        };
-        templateGrid.appendChild(div);
-    });
+    if (shouldRenderTemplates) {
+        filteredTemplates.slice(0, visibleTemplateCount).forEach((template) => {
+            templateGrid.appendChild(createAssetCard(template.name, getPreviewAssetUrl(template.url), template.url, () => {
+                loadTemplate(template.url, template.name);
+            }));
+        });
+    }
+    updateAssetLoadMoreButton(
+        'template-load-more-btn',
+        shouldRenderTemplates ? Math.min(visibleTemplateCount, filteredTemplates.length) : 0,
+        shouldRenderTemplates ? filteredTemplates.length : 0,
+        '加载更多模板'
+    );
 
     const filteredStickers = stickerTemplates.filter((item) => {
         return currentStickerStyle === 'all' || item.style === currentStickerStyle;
     });
 
+    const shouldRenderStickers = shouldRenderStickerAssets();
+    if (!visibleStickerCount && shouldRenderStickers) {
+        visibleStickerCount = getAssetBatchSize();
+    }
+
     const stickerGrid = document.getElementById('sticker-grid');
     stickerGrid.innerHTML = '';
-    filteredStickers.forEach((sticker) => {
-        const div = document.createElement('div');
-        div.className = 'template-card';
-        div.innerHTML = `<img src="${sticker.url}"><p>${sticker.name}</p>`;
-        const img = div.querySelector('img');
-        img.draggable = false;
-        img.addEventListener('dragstart', (event) => event.preventDefault());
-        div.onclick = (event) => {
-            event.preventDefault();
-            openStickerCutoutModal(sticker.url, sticker.name);
-        };
-        stickerGrid.appendChild(div);
-    });
+    if (shouldRenderStickers) {
+        filteredStickers.slice(0, visibleStickerCount).forEach((sticker) => {
+            stickerGrid.appendChild(createAssetCard(sticker.name, getPreviewAssetUrl(sticker.url), sticker.url, () => {
+                openStickerCutoutModal(sticker.url, sticker.name);
+            }));
+        });
+    }
+    updateAssetLoadMoreButton('sticker-load-more-btn', shouldRenderStickers ? Math.min(visibleStickerCount, filteredStickers.length) : 0, shouldRenderStickers ? filteredStickers.length : 0, '加载更多贴纸');
 }
 
 function setupFilterEvents() {
     document.querySelectorAll('.filter-btn').forEach((btn) => {
         btn.addEventListener('click', function() {
             currentCategory = this.getAttribute('data-category');
+            visibleTemplateCount = getAssetBatchSize();
             document.querySelectorAll('.filter-btn').forEach((item) => item.classList.remove('active'));
             this.classList.add('active');
             renderUI();
@@ -2034,6 +2111,7 @@ function setupFilterEvents() {
     document.querySelectorAll('.style-btn').forEach((btn) => {
         btn.addEventListener('click', function() {
             currentStyle = this.getAttribute('data-style');
+            visibleTemplateCount = getAssetBatchSize();
             document.querySelectorAll('.style-btn').forEach((item) => item.classList.remove('active'));
             this.classList.add('active');
             renderUI();
@@ -2043,10 +2121,48 @@ function setupFilterEvents() {
     document.querySelectorAll('.sticker-style-btn').forEach((btn) => {
         btn.addEventListener('click', function() {
             currentStickerStyle = this.getAttribute('data-sticker-style');
+            visibleStickerCount = getAssetBatchSize();
             document.querySelectorAll('.sticker-style-btn').forEach((item) => item.classList.remove('active'));
             this.classList.add('active');
             renderUI();
         });
+    });
+
+    const templateLoadMoreBtn = document.getElementById('template-load-more-btn');
+    if (templateLoadMoreBtn) {
+        templateLoadMoreBtn.addEventListener('click', () => {
+            visibleTemplateCount += getAssetBatchSize();
+            renderUI();
+        });
+    }
+
+    const stickerLoadMoreBtn = document.getElementById('sticker-load-more-btn');
+    if (stickerLoadMoreBtn) {
+        stickerLoadMoreBtn.addEventListener('click', () => {
+            visibleStickerCount += getAssetBatchSize();
+            renderUI();
+        });
+    }
+
+    document.querySelectorAll('.asset-drawer').forEach((drawer) => {
+        drawer.addEventListener('toggle', () => {
+            if (drawer.classList.contains('template-drawer') && drawer.open && !visibleTemplateCount) {
+                visibleTemplateCount = getAssetBatchSize();
+            }
+            if (drawer.classList.contains('sticker-drawer') && drawer.open && !visibleStickerCount) {
+                visibleStickerCount = getAssetBatchSize();
+            }
+            renderUI();
+        });
+    });
+
+    window.addEventListener('resize', () => {
+        const minimumBatch = getAssetBatchSize();
+        visibleTemplateCount = Math.max(visibleTemplateCount || 0, minimumBatch);
+        if (visibleStickerCount) {
+            visibleStickerCount = Math.max(visibleStickerCount, minimumBatch);
+        }
+        renderUI();
     });
 }
 
