@@ -87,8 +87,8 @@ const DRAFT_STORAGE_KEY = 'fanMerchCanvasDraft';
 const CUTOUT_LIBRARY_DB_NAME = 'fanMerchLocalAssets';
 const CUTOUT_LIBRARY_STORE = 'cutouts';
 const MAX_LOCAL_CUTOUTS = 12;
-const MOBILE_ASSET_BATCH_SIZE = 4;
-const DESKTOP_ASSET_BATCH_SIZE = 10;
+const MOBILE_ASSET_BATCH_SIZE = 3;
+const DESKTOP_ASSET_BATCH_SIZE = 6;
 const TEXT_STYLE_PRESETS = {
     default: { fontFamily: 'Microsoft YaHei', fontWeight: '700' },
     cute: { fontFamily: 'YouYuan, Microsoft YaHei, sans-serif', fontWeight: '700' },
@@ -1092,38 +1092,11 @@ function updateAssetLoadStatus(statusId, visibleCount, totalCount, noun) {
 }
 
 function autoLoadMoreAssetsIfNeeded() {
-    if (!window.matchMedia('(max-width: 768px)').matches) return;
-
-    const tryAdvance = (buttonId, increment) => {
-        const button = document.getElementById(buttonId);
-        if (!button || button.hidden || button.style.display === 'none') return false;
-        const rect = button.getBoundingClientRect();
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-        if (rect.top > viewportHeight + 120) return false;
-        increment();
-        return true;
-    };
-
-    if (tryAdvance('template-load-more-btn', () => {
-        visibleTemplateCount += getAssetBatchSize();
-    })) {
-        renderUI();
-        return;
-    }
-
-    if (tryAdvance('sticker-load-more-btn', () => {
-        visibleStickerCount += getAssetBatchSize();
-    })) {
-        renderUI();
-    }
+    return;
 }
 
 function scheduleAutoLoadMoreAssets() {
-    if (assetAutoLoadFrame) return;
-    assetAutoLoadFrame = window.requestAnimationFrame(() => {
-        assetAutoLoadFrame = 0;
-        autoLoadMoreAssetsIfNeeded();
-    });
+    return;
 }
 
 function blobToDataUrl(blob) {
@@ -2420,7 +2393,6 @@ function setupFilterEvents() {
         renderUI();
     });
 
-    window.addEventListener('scroll', scheduleAutoLoadMoreAssets, { passive: true });
 }
 
 function setupMobileWorkspace() {
