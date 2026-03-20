@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_KEY = process.env.ADMIN_KEY || 'fan-merch-admin';
 const REMOVE_BG_API_URL = 'https://api.remove.bg/v1.0/removebg';
 const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY || 'EtDYCyrywLMrc6MMc5YERjVV';
+const REMOVE_BG_UPSTREAM_TIMEOUT_MS = 45000;
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, 'data');
@@ -504,13 +505,24 @@ app.post('/api/remove-bg', authRequired, (req, res) => {
       formData.append('image_file', new Blob([req.file.buffer], { type: mimeType }), fileName);
       formData.append('size', 'preview');
 
-      const response = await fetch(REMOVE_BG_API_URL, {
-        method: 'POST',
-        headers: {
-          'X-Api-Key': REMOVE_BG_API_KEY
-        },
-        body: formData
-      });
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, REMOVE_BG_UPSTREAM_TIMEOUT_MS);
+
+      let response;
+      try {
+        response = await fetch(REMOVE_BG_API_URL, {
+          method: 'POST',
+          headers: {
+            'X-Api-Key': REMOVE_BG_API_KEY
+          },
+          body: formData,
+          signal: abortController.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         const upstreamMessage = await readRemoveBgError(response);
@@ -537,6 +549,10 @@ app.post('/api/remove-bg', authRequired, (req, res) => {
         fileSize: req.file?.size || 0,
         message: error.message || 'unknown error'
       });
+      if (error?.name === 'AbortError') {
+        res.status(504).json({ error: 'remove.bg 处理超时，请换一张更小的图片后再试。' });
+        return;
+      }
       res.status(500).json({ error: error.message || '抠图服务暂时不可用' });
     }
   });

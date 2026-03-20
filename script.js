@@ -88,6 +88,7 @@ const CUTOUT_LIBRARY_STORE = 'cutouts';
 const MAX_LOCAL_CUTOUTS = 12;
 const MAX_REMOVE_BG_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_REMOVE_BG_IMAGE_DIMENSION = 2048;
+const REMOVE_BG_REQUEST_TIMEOUT_MS = 45000;
 const MOBILE_ASSET_BATCH_SIZE = 3;
 const DESKTOP_ASSET_BATCH_SIZE = 6;
 const TEXT_STYLE_PRESETS = {
@@ -1193,17 +1194,19 @@ async function optimizeUploadImage(file, customLimit = null) {
         throw new Error('手机照片当前是 HEIC/HEIF 格式，网页端抠图不稳定。请先转换成 JPG/PNG，或把手机相机格式改成“兼容性最佳”后再试。');
     }
 
-    const mimeType = String(file.type || '').toLowerCase();
-    const canUseOriginal = ['image/jpeg', 'image/png', 'image/webp'].includes(mimeType) && file.size <= optimizationLimit.maxBytes;
-    if (canUseOriginal) {
-        return file;
-    }
-
     const image = await loadImageElement(file);
     const width = Number(image.naturalWidth || image.width || 0);
     const height = Number(image.naturalHeight || image.height || 0);
     if (!width || !height) {
         throw new Error('图片尺寸读取失败，请换一张 JPG 或 PNG 再试');
+    }
+
+    const mimeType = String(file.type || '').toLowerCase();
+    const canUseOriginal = ['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)
+        && file.size <= optimizationLimit.maxBytes
+        && Math.max(width, height) <= optimizationLimit.maxDimension;
+    if (canUseOriginal) {
+        return file;
     }
 
     const scale = Math.min(1, optimizationLimit.maxDimension / Math.max(width, height));
@@ -2821,11 +2824,22 @@ async function handleGenerate() {
         const formData = new FormData();
         formData.append('image_file', preparedFile);
 
-        const response = await fetch(`${API_BASE}/api/remove-bg`, {
-            method: 'POST',
-            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-            body: formData
-        });
+        const abortController = new AbortController();
+        const timeoutId = window.setTimeout(() => {
+            abortController.abort();
+        }, REMOVE_BG_REQUEST_TIMEOUT_MS);
+
+        let response;
+        try {
+            response = await fetch(`${API_BASE}/api/remove-bg`, {
+                method: 'POST',
+                headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+                body: formData,
+                signal: abortController.signal
+            });
+        } finally {
+            window.clearTimeout(timeoutId);
+        }
 
         if (!response.ok) {
             throw new Error(await readApiErrorMessage(response, `抠图失败（${response.status}）`));
@@ -2841,7 +2855,11 @@ async function handleGenerate() {
             alert(libraryError.message || '抠图已完成，但保存到本地人物库失败');
         }
     } catch (error) {
-        alert(error.message || '抠图失败');
+        if (error?.name === 'AbortError') {
+            alert('手机端图片上传或 remove.bg 处理超时了。通常是照片分辨率过大导致，现在请换一张更小的照片，或先把原图压缩后再试。');
+        } else {
+            alert(error.message || '抠图失败');
+        }
     } finally {
         loading.style.display = 'none';
         loading.innerText = '⏳ 正在通过 remove.bg（preview 模式）抠图，请稍候...';
