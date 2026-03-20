@@ -86,8 +86,10 @@ const DRAFT_STORAGE_KEY = 'fanMerchCanvasDraft';
 const CUTOUT_LIBRARY_DB_NAME = 'fanMerchLocalAssets';
 const CUTOUT_LIBRARY_STORE = 'cutouts';
 const MAX_LOCAL_CUTOUTS = 12;
+const REMOVE_BG_API_URL = 'https://api.remove.bg/v1.0/removebg';
+const REMOVE_BG_API_KEY = 'EtDYCyrywLMrc6MMc5YERjVV';
 const MAX_REMOVE_BG_UPLOAD_BYTES = 4 * 1024 * 1024;
-const MAX_REMOVE_BG_IMAGE_DIMENSION = 2048;
+const MAX_REMOVE_BG_IMAGE_DIMENSION = 1200;
 const REMOVE_BG_REQUEST_TIMEOUT_MS = 45000;
 const MOBILE_ASSET_BATCH_SIZE = 3;
 const DESKTOP_ASSET_BATCH_SIZE = 6;
@@ -1180,8 +1182,8 @@ function createUploadLikeFile(blob, originalFileName) {
 
 function getUploadOptimizationLimit(customLimit = {}) {
     const baseLimit = isMobileLikeDevice()
-        ? { maxBytes: 2 * 1024 * 1024, maxDimension: 1280, quality: 0.82 }
-        : { maxBytes: MAX_REMOVE_BG_UPLOAD_BYTES, maxDimension: MAX_REMOVE_BG_IMAGE_DIMENSION, quality: 0.9 };
+        ? { maxBytes: 2 * 1024 * 1024, maxDimension: 1200, quality: 0.8 }
+        : { maxBytes: MAX_REMOVE_BG_UPLOAD_BYTES, maxDimension: MAX_REMOVE_BG_IMAGE_DIMENSION, quality: 0.8 };
     return { ...baseLimit, ...customLimit };
 }
 
@@ -2505,12 +2507,9 @@ function setupUpload() {
         if (!file) return;
 
         try {
-            pendingFile = await optimizeUploadImage(file);
+            pendingFile = file;
             if (uploadTitle) {
-                const optimized = pendingFile && pendingFile !== file;
-                uploadTitle.innerText = optimized
-                    ? `✅ 已处理手机照片：${pendingFile.name}`
-                    : `✅ 已选：${pendingFile.name}`;
+                uploadTitle.innerText = `✅ 已选：${pendingFile.name}`;
             }
             if (generateBtn) {
                 generateBtn.disabled = false;
@@ -2816,13 +2815,16 @@ async function handleGenerate() {
     const loading = document.getElementById('loading-status');
     const generateBtn = document.getElementById('generate-btn');
     loading.style.display = 'block';
-    loading.innerText = '⏳ 正在通过 remove.bg（preview 模式）抠图，请稍候...';
+    loading.innerText = '⏳ 图片压缩中...';
     generateBtn.disabled = true;
 
     try {
         const preparedFile = await optimizeUploadImage(pendingFile);
         const formData = new FormData();
         formData.append('image_file', preparedFile);
+        formData.append('size', 'auto');
+
+        loading.innerText = '⏳ AI 抠图进行中...';
 
         const abortController = new AbortController();
         const timeoutId = window.setTimeout(() => {
@@ -2831,9 +2833,11 @@ async function handleGenerate() {
 
         let response;
         try {
-            response = await fetch(`${API_BASE}/api/remove-bg`, {
+            response = await fetch(REMOVE_BG_API_URL, {
                 method: 'POST',
-                headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+                headers: {
+                    'X-Api-Key': REMOVE_BG_API_KEY
+                },
                 body: formData,
                 signal: abortController.signal
             });
@@ -2862,7 +2866,7 @@ async function handleGenerate() {
         }
     } finally {
         loading.style.display = 'none';
-        loading.innerText = '⏳ 正在通过 remove.bg（preview 模式）抠图，请稍候...';
+        loading.innerText = '⏳ AI 抠图进行中...';
         generateBtn.disabled = false;
     }
 }
