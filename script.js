@@ -86,6 +86,8 @@ const DRAFT_STORAGE_KEY = 'fanMerchCanvasDraft';
 const CUTOUT_LIBRARY_DB_NAME = 'fanMerchLocalAssets';
 const CUTOUT_LIBRARY_STORE = 'cutouts';
 const MAX_LOCAL_CUTOUTS = 12;
+const MAX_REMOVE_BG_UPLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_REMOVE_BG_IMAGE_DIMENSION = 2048;
 const MOBILE_ASSET_BATCH_SIZE = 3;
 const DESKTOP_ASSET_BATCH_SIZE = 6;
 const TEXT_STYLE_PRESETS = {
@@ -127,6 +129,8 @@ let suppressDraftSave = false;
 let cutoutDbPromise = null;
 let responsiveCanvasFrame = 0;
 let assetAutoLoadFrame = 0;
+let selfieSegmentationInstance = null;
+let selfieSegmentationLoadPromise = null;
 let stickerCutoutState = {
     sourceUrl: '',
     sourceName: '',
@@ -1105,6 +1109,181 @@ function blobToDataUrl(blob) {
         reader.onerror = () => reject(new Error('图片读取失败'));
         reader.readAsDataURL(blob);
     });
+}
+
+function loadImageElement(src) {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('图片解析失败，请换一张 JPG 或 PNG 再试'));
+        image.src = src;
+    });
+}
+
+function canvasToBlob(canvasElement, mimeType, quality) {
+    return new Promise((resolve, reject) => {
+        canvasElement.toBlob((blob) => {
+            if (!blob) {
+                reject(new Error('图片压缩失败，请换一张图片后再试'));
+                return;
+            }
+            resolve(blob);
+        }, mimeType, quality);
+    });
+}
+
+function isHeicLikeFile(file) {
+    const mimeType = String(file?.type || '').toLowerCase();
+    const fileName = String(file?.name || '').toLowerCase();
+    return mimeType.includes('heic') || mimeType.includes('heif') || /\.(heic|heif)$/i.test(fileName);
+}
+
+async function optimizeUploadImage(file) {
+    if (!file) return null;
+
+    if (isHeicLikeFile(file)) {
+        throw new Error('手机照片当前是 HEIC/HEIF 格式，网页端抠图不稳定。请先转换成 JPG/PNG，或把手机相机格式改成“兼容性最佳”后再试。');
+    }
+
+    const mimeType = String(file.type || '').toLowerCase();
+    const canUseOriginal = ['image/jpeg', 'image/png', 'image/webp'].includes(mimeType) && file.size <= MAX_REMOVE_BG_UPLOAD_BYTES;
+    if (canUseOriginal) {
+        return file;
+    }
+
+    const imageSrc = await blobToDataUrl(file);
+    const image = await loadImageElement(imageSrc);
+    const width = Number(image.naturalWidth || image.width || 0);
+    const height = Number(image.naturalHeight || image.height || 0);
+    if (!width || !height) {
+        throw new Error('图片尺寸读取失败，请换一张 JPG 或 PNG 再试');
+    }
+
+    const scale = Math.min(1, MAX_REMOVE_BG_IMAGE_DIMENSION / Math.max(width, height));
+    const targetWidth = Math.max(1, Math.round(width * scale));
+    const targetHeight = Math.max(1, Math.round(height * scale));
+    const canvasElement = document.createElement('canvas');
+    canvasElement.width = targetWidth;
+    canvasElement.height = targetHeight;
+    const ctx = canvasElement.getContext('2d');
+    if (!ctx) {
+        throw new Error('图片处理失败，请换一张图片后再试');
+    }
+
+    ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+    const outputBlob = await canvasToBlob(canvasElement, 'image/jpeg', 0.9);
+    const nextName = String(file.name || 'upload').replace(/\.[^.]+$/, '') || 'upload';
+    return new File([outputBlob], `${nextName}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now()
+    });
+}
+
+async function getFrontEndSegmentationModel() {
+    if (selfieSegmentationInstance) {
+        return selfieSegmentationInstance;
+    }
+    if (selfieSegmentationLoadPromise) {
+        return selfieSegmentationLoadPromise;
+    }
+
+    selfieSegmentationLoadPromise = (async () => {
+        if (typeof window.SelfieSegmentation !== 'function') {
+            throw new Error('本地抠图模型加载失败，请刷新页面后重试');
+        }
+
+        const model = new window.SelfieSegmentation({
+            locateFile(file) {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
+            }
+        });
+        model.setOptions({ modelSelection: 1 });
+        selfieSegmentationInstance = model;
+        return model;
+    })();
+
+    try {
+        return await selfieSegmentationLoadPromise;
+    } finally {
+        selfieSegmentationLoadPromise = null;
+    }
+}
+
+async function runFrontEndSegmentation(image) {
+    const model = await getFrontEndSegmentationModel();
+    return new Promise((resolve, reject) => {
+        let finished = false;
+
+        model.onResults((results) => {
+            if (finished) return;
+            finished = true;
+            if (!results?.segmentationMask) {
+                reject(new Error('本地抠图失败，未检测到人物区域'));
+                return;
+            }
+            resolve(results);
+        });
+
+        model.send({ image }).catch((error) => {
+            if (finished) return;
+            finished = true;
+            reject(error);
+        });
+    });
+}
+
+function buildCutoutFromSegmentation(image, segmentationMask) {
+    const width = Number(image.naturalWidth || image.width || 0);
+    const height = Number(image.naturalHeight || image.height || 0);
+    if (!width || !height) {
+        throw new Error('图片尺寸读取失败，请换一张清晰照片再试');
+    }
+
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = width;
+    maskCanvas.height = height;
+    const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+    if (!maskCtx) {
+        throw new Error('本地抠图失败，请刷新页面后再试');
+    }
+    maskCtx.drawImage(segmentationMask, 0, 0, width, height);
+    const maskData = maskCtx.getImageData(0, 0, width, height).data;
+
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = width;
+    outputCanvas.height = height;
+    const outputCtx = outputCanvas.getContext('2d', { willReadFrequently: true });
+    if (!outputCtx) {
+        throw new Error('本地抠图失败，请刷新页面后再试');
+    }
+    outputCtx.drawImage(image, 0, 0, width, height);
+    const imageData = outputCtx.getImageData(0, 0, width, height);
+    const pixels = imageData.data;
+
+    for (let index = 0; index < pixels.length; index += 4) {
+        const maskValue = maskData[index] / 255;
+        let alpha = 0;
+        if (maskValue >= 0.72) {
+            alpha = 255;
+        } else if (maskValue > 0.32) {
+            alpha = Math.round(((maskValue - 0.32) / 0.4) * 255);
+        }
+        pixels[index + 3] = alpha;
+    }
+
+    outputCtx.putImageData(imageData, 0, 0);
+    return outputCanvas.toDataURL('image/png');
+}
+
+async function removeBackgroundInBrowser(file) {
+    const preparedFile = await optimizeUploadImage(file);
+    const imageSrc = await blobToDataUrl(preparedFile);
+    const image = await loadImageElement(imageSrc);
+    const results = await runFrontEndSegmentation(image);
+    return {
+        imageData: buildCutoutFromSegmentation(image, results.segmentationMask),
+        preparedFile
+    };
 }
 
 function getCutoutLibraryDb() {
@@ -2243,21 +2422,43 @@ function setupLayerControls() {
 function setupUpload() {
     const area = document.getElementById('upload-area');
     const input = document.getElementById('photo-upload');
+    const uploadTitle = area?.querySelector('p');
+    const generateBtn = document.getElementById('generate-btn');
 
     area.onclick = () => {
         if (!requireEditorLogin('上传照片')) return;
         input.click();
     };
-    input.onchange = (event) => {
+    input.onchange = async (event) => {
         if (!requireEditorLogin('上传照片')) {
             input.value = '';
             return;
         }
         const file = event.target.files[0];
         if (!file) return;
-        pendingFile = file;
-        area.querySelector('p').innerText = `✅ 已选：${file.name}`;
-        document.getElementById('generate-btn').disabled = false;
+
+        try {
+            pendingFile = await optimizeUploadImage(file);
+            if (uploadTitle) {
+                const optimized = pendingFile && pendingFile !== file;
+                uploadTitle.innerText = optimized
+                    ? `✅ 已处理手机照片：${pendingFile.name}`
+                    : `✅ 已选：${pendingFile.name}`;
+            }
+            if (generateBtn) {
+                generateBtn.disabled = false;
+            }
+        } catch (error) {
+            pendingFile = null;
+            input.value = '';
+            if (uploadTitle) {
+                uploadTitle.innerText = '📸 点击上传爱豆照片';
+            }
+            if (generateBtn) {
+                generateBtn.disabled = true;
+            }
+            alert(error.message || '图片处理失败，请换一张 JPG 或 PNG 再试');
+        }
     };
 }
 
@@ -2548,37 +2749,12 @@ async function handleGenerate() {
     const loading = document.getElementById('loading-status');
     const generateBtn = document.getElementById('generate-btn');
     loading.style.display = 'block';
+    loading.innerText = '⏳ 正在本地抠图，请稍候...';
     generateBtn.disabled = true;
 
     try {
-        const formData = new FormData();
-        formData.append('image_file', pendingFile);
-        const headers = {};
-        if (authToken) {
-            headers.Authorization = `Bearer ${authToken}`;
-        }
-        const response = await fetch(`${API_BASE}/api/remove-bg`, {
-            method: 'POST',
-            headers,
-            body: formData
-        });
-        if (!response.ok) {
-            let errorMessage = '抠图失败';
-            try {
-                const errorData = await response.json();
-                errorMessage = errorData?.errors?.[0]?.title || errorData?.errors?.[0]?.detail || errorData?.error || `抠图失败（${response.status}）`;
-            } catch (parseError) {
-                try {
-                    const errorText = await response.text();
-                    errorMessage = errorText || `抠图失败（${response.status}）`;
-                } catch (textError) {
-                    errorMessage = `抠图失败（${response.status}）`;
-                }
-            }
-            throw new Error(errorMessage);
-        }
-        const blob = await response.blob();
-        const imageData = await blobToDataUrl(blob);
+        const { imageData, preparedFile } = await removeBackgroundInBrowser(pendingFile);
+        pendingFile = preparedFile;
         await addIdolToCanvas(imageData);
         try {
             await saveCutoutToLibrary(imageData, pendingFile?.name || '人物抠图');
@@ -2586,9 +2762,10 @@ async function handleGenerate() {
             alert(libraryError.message || '抠图已完成，但保存到本地人物库失败');
         }
     } catch (error) {
-        alert(error.message || '抠图失败');
+        alert(error.message || '本地抠图失败');
     } finally {
         loading.style.display = 'none';
+        loading.innerText = '⏳ AI 正在智能抠图，请稍候...';
         generateBtn.disabled = false;
     }
 }
