@@ -970,7 +970,7 @@ function isLocalImageAsset(url) {
 }
 
 function shouldUseLightweightCanvasAssets() {
-    return window.matchMedia('(max-width: 768px)').matches;
+    return false;
 }
 
 function getCanvasAssetSources(url) {
@@ -2230,27 +2230,37 @@ function addStickerToCanvas(url, name = '') {
 
 function exportCanvasSnapshot() {
     return new Promise((resolve, reject) => {
-        const exportElement = document.createElement('canvas');
-        exportElement.width = CANVAS_WIDTH;
-        exportElement.height = CANVAS_HEIGHT;
+        if (!canvas) {
+            reject(new Error('画布未初始化'));
+            return;
+        }
 
-        const exportCanvas = new fabric.StaticCanvas(exportElement, {
-            width: CANVAS_WIDTH,
-            height: CANVAS_HEIGHT,
-            backgroundColor: canvas.backgroundColor || '#ffffff'
-        });
+        const previousWidth = canvas.getWidth();
+        const previousHeight = canvas.getHeight();
+        const previousViewport = canvas.viewportTransform ? [...canvas.viewportTransform] : [1, 0, 0, 1, 0, 0];
+        const activeObject = canvas.getActiveObject();
 
-        exportCanvas.loadFromJSON(buildExportCanvasJson(), () => {
-            try {
-                exportCanvas.renderAll();
-                const dataUrl = exportCanvas.toDataURL({ format: 'png' });
-                exportCanvas.dispose();
-                resolve(dataUrl);
-            } catch (error) {
-                exportCanvas.dispose();
-                reject(error);
+        try {
+            if (activeObject) {
+                canvas.discardActiveObject();
             }
-        });
+
+            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+            canvas.setDimensions({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
+            canvas.renderAll();
+
+            const dataUrl = canvas.toDataURL({ format: 'png', multiplier: 1, enableRetinaScaling: false });
+            resolve(dataUrl);
+        } catch (error) {
+            reject(error);
+        } finally {
+            canvas.setDimensions({ width: previousWidth, height: previousHeight });
+            canvas.setViewportTransform(previousViewport);
+            if (activeObject) {
+                canvas.setActiveObject(activeObject);
+            }
+            canvas.renderAll();
+        }
     });
 }
 
