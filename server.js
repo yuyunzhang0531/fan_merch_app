@@ -427,7 +427,14 @@ app.post('/api/user/checkin-status', authRequired, handleUserCheckInStatus);
 app.get('/api/user/check-in-status', authRequired, handleUserCheckInStatus);
 app.get('/api/user/checkin-status', authRequired, handleUserCheckInStatus);
 
-app.use(express.static(__dirname));
+app.use(express.static(__dirname, {
+  maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+  setHeaders(res, filePath) {
+    if (filePath.includes(`${path.sep}image${path.sep}previews${path.sep}`)) {
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    }
+  }
+}));
 app.use('/api', (req, res) => {
   res.status(404).json({ error: '接口不存在' });
 });

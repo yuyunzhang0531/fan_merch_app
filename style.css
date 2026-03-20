@@ -1415,6 +1415,21 @@ header p {
     border-radius: 12px;
 }
 
+.template-card .asset-preview {
+    background: linear-gradient(135deg, #f7eefc 0%, #f2f6ff 100%);
+    transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.template-card .asset-preview.is-loading {
+    opacity: 0.42;
+    filter: blur(8px);
+}
+
+.template-card .asset-preview.is-ready {
+    opacity: 1;
+    filter: none;
+}
+
 .template-card p {
     font-size: 0.82rem;
     font-weight: 700;

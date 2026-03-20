@@ -71,8 +71,8 @@ const DRAFT_STORAGE_KEY = 'fanMerchCanvasDraft';
 const CUTOUT_LIBRARY_DB_NAME = 'fanMerchLocalAssets';
 const CUTOUT_LIBRARY_STORE = 'cutouts';
 const MAX_LOCAL_CUTOUTS = 12;
-const MOBILE_ASSET_BATCH_SIZE = 8;
-const DESKTOP_ASSET_BATCH_SIZE = 12;
+const MOBILE_ASSET_BATCH_SIZE = 4;
+const DESKTOP_ASSET_BATCH_SIZE = 10;
 const TEXT_STYLE_PRESETS = {
     default: { fontFamily: 'Microsoft YaHei', fontWeight: '700' },
     cute: { fontFamily: 'YouYuan, Microsoft YaHei, sans-serif', fontWeight: '700' },
@@ -825,7 +825,14 @@ function escapeHtml(text) {
 }
 
 function getAssetBatchSize() {
-    return window.matchMedia('(max-width: 768px)').matches ? MOBILE_ASSET_BATCH_SIZE : DESKTOP_ASSET_BATCH_SIZE;
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const saveData = Boolean(connection?.saveData);
+    const effectiveType = String(connection?.effectiveType || '').toLowerCase();
+    if (isMobile && (saveData || effectiveType.includes('2g'))) {
+        return 2;
+    }
+    return isMobile ? MOBILE_ASSET_BATCH_SIZE : DESKTOP_ASSET_BATCH_SIZE;
 }
 
 function getPreviewAssetUrl(url) {
@@ -860,13 +867,20 @@ function createAssetCard(name, previewUrl, originalUrl, onClick) {
     img.loading = 'lazy';
     img.decoding = 'async';
     img.fetchPriority = 'low';
-    img.src = previewUrl;
+    img.className = 'asset-preview is-loading';
     img.draggable = false;
+    img.src = previewUrl || originalUrl;
+    img.addEventListener('load', () => {
+        img.classList.remove('is-loading');
+        img.classList.add('is-ready');
+    });
     img.addEventListener('error', () => {
         if (img.src !== originalUrl) {
             img.src = originalUrl;
+            return;
         }
-    }, { once: true });
+        img.classList.remove('is-loading');
+    });
     img.addEventListener('dragstart', (event) => event.preventDefault());
 
     const title = document.createElement('p');
