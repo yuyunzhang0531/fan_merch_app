@@ -569,14 +569,23 @@ function isUserLoggedIn() {
     return Boolean(authToken && currentUser.email);
 }
 
-function goToAuthPage() {
-    window.location.href = 'auth.html';
+function goToAuthPage(actionText = '') {
+    try {
+        sessionStorage.setItem('fanMerchAuthReturnTo', 'index.html');
+        if (actionText) {
+            sessionStorage.setItem('fanMerchAuthMessage', `请先登录后再${actionText}`);
+        } else {
+            sessionStorage.removeItem('fanMerchAuthMessage');
+        }
+    } catch (error) {
+        // ignore sessionStorage write failure
+    }
+    window.location.assign('auth.html');
 }
 
 function requireEditorLogin(actionText = '进行制作') {
     if (isUserLoggedIn()) return true;
-    alert(`请先登录后再${actionText}，现在将自动跳转到登录/注册页面。`);
-    goToAuthPage();
+    goToAuthPage(actionText);
     return false;
 }
 
@@ -584,6 +593,7 @@ function updateCropModeUI() {
     const btn = document.getElementById('btn-crop-mode');
     const cropActionBar = document.getElementById('crop-action-bar');
     const canvasWrapper = document.querySelector('.canvas-container-wrapper');
+    const cropGestureLayer = document.getElementById('crop-gesture-layer');
 
     if (btn) {
         btn.style.background = cropMode ? '#ff5252' : '#ff9800';
@@ -598,8 +608,14 @@ function updateCropModeUI() {
         canvasWrapper.classList.toggle('is-crop-mode', cropMode);
     }
 
+    if (cropGestureLayer) {
+        cropGestureLayer.hidden = !cropMode;
+        cropGestureLayer.classList.toggle('is-active', cropMode);
+    }
+
     if (canvas?.upperCanvasEl) {
         canvas.upperCanvasEl.style.touchAction = cropMode ? 'none' : 'manipulation';
+        canvas.upperCanvasEl.style.pointerEvents = cropMode ? 'none' : '';
     }
 }
 
@@ -1644,8 +1660,7 @@ function setupMobileNavMenu() {
         rechargeBtn.onclick = () => {
             closeNav();
             if (!authToken || !currentUser.email) {
-                alert('请先登录后再充值');
-                window.location.href = 'auth.html';
+                goToAuthPage('充值');
                 return;
             }
             openRechargeModal('随时充值，赶快增加积分吧！');
@@ -1715,8 +1730,7 @@ async function saveGeneratedToLibrary(imageData) {
 
 async function handleRechargeConfirm() {
     if (!authToken || !currentUser.email) {
-        alert('请先登录后再充值');
-        window.location.href = 'auth.html';
+        goToAuthPage('充值');
         return;
     }
 
@@ -1776,8 +1790,7 @@ function initAuthEntry() {
     if (rechargeBtn) {
         rechargeBtn.onclick = () => {
             if (!authToken || !currentUser.email) {
-                alert('请先登录后再充值');
-                window.location.href = 'auth.html';
+                goToAuthPage('充值');
                 return;
             }
             openRechargeModal('随时充值，赶快增加积分吧！');
@@ -2585,14 +2598,11 @@ function initCanvas() {
         width: CANVAS_WIDTH,
         height: CANVAS_HEIGHT,
         backgroundColor: '#ffffff',
-        preserveObjectStacking: true
+        preserveObjectStacking: true,
+        allowTouchScrolling: false
     });
     canvas.renderAll();
-    
-    // 添加裁剪模式的canvas事件监听
-    canvas.on('mouse:down', handleCanvasCropMouseDown);
-    canvas.on('mouse:move', handleCanvasCropMouseMove);
-    canvas.on('mouse:up', handleCanvasCropMouseUp);
+    setupCropGestureLayerEvents();
     canvas.on('object:moving', (event) => {
         if (!event || !event.target) return;
         if (cropMode) return;
@@ -2672,72 +2682,151 @@ function toggleCropMode() {
     performCrop(pendingCropRect.left, pendingCropRect.top, pendingCropRect.width, pendingCropRect.height);
 }
 
-function handleCanvasCropMouseDown(e) {
-    if (!cropMode || !e.pointer) return;
-    e.e?.preventDefault?.();
-    cropStartX = e.pointer.x;
-    cropStartY = e.pointer.y;
-    cropDragging = true;
+function getCropPointerFromEvent(event) {
+    if (!canvas || !event) return null;
+    const wrapper = document.querySelector('.canvas-container-wrapper');
+    const canvasEl = canvas.upperCanvasEl || canvas.lowerCanvasEl;
+    if (!wrapper || !canvasEl) return null;
+
+    const clientX = event.clientX ?? event.touches?.[0]?.clientX;
+    const clientY = event.clientY ?? event.touches?.[0]?.clientY;
+    if (typeof clientX !== 'number' || typeof clientY !== 'number') return null;
+
+    const canvasRect = canvasEl.getBoundingClientRect();
+    if (
+        clientX < canvasRect.left ||
+        clientX > canvasRect.right ||
+        clientY < canvasRect.top ||
+        clientY > canvasRect.bottom
+    ) {
+        return null;
+    }
+
+    const x = ((clientX - canvasRect.left) / canvasRect.width) * canvas.getWidth();
+    const y = ((clientY - canvasRect.top) / canvasRect.height) * canvas.getHeight();
+    return { x, y };
 }
 
-function handleCanvasCropMouseMove(e) {
-    if (!cropMode || !e.pointer) return;
-    e.e?.preventDefault?.();
-    
-    // 清除之前的预览矩形
-    const previewRect = canvas.getObjects().find(obj => obj.isCropPreview);
+function renderCropGestureBox() {
+    const box = document.getElementById('crop-gesture-box');
+    const wrapper = document.querySelector('.canvas-container-wrapper');
+    const canvasEl = canvas?.upperCanvasEl || canvas?.lowerCanvasEl;
+    if (!box || !wrapper || !canvasEl) return;
+
+    const width = Math.abs(cropEndX - cropStartX);
+    const height = Math.abs(cropEndY - cropStartY);
+    if (!cropDragging || width <= 6 || height <= 6) {
+        box.hidden = true;
+        return;
+    }
+
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const canvasRect = canvasEl.getBoundingClientRect();
+    const scaleX = canvasRect.width / canvas.getWidth();
+    const scaleY = canvasRect.height / canvas.getHeight();
+
+    const left = Math.min(cropStartX, cropEndX) * scaleX + (canvasRect.left - wrapperRect.left);
+    const top = Math.min(cropStartY, cropEndY) * scaleY + (canvasRect.top - wrapperRect.top);
+
+    box.hidden = false;
+    box.style.left = `${left}px`;
+    box.style.top = `${top}px`;
+    box.style.width = `${width * scaleX}px`;
+    box.style.height = `${height * scaleY}px`;
+}
+
+function clearCropPreviewRect() {
+    const box = document.getElementById('crop-gesture-box');
+    if (box) {
+        box.hidden = true;
+        box.style.width = '0px';
+        box.style.height = '0px';
+    }
+    if (!canvas) return;
+    const previewRect = canvas.getObjects().find((obj) => obj.isCropPreview);
     if (previewRect) {
         canvas.remove(previewRect);
     }
-    
-    if (cropDragging) {
-        cropEndX = e.pointer.x;
-        cropEndY = e.pointer.y;
-        
-        const left = Math.min(cropStartX, cropEndX);
-        const top = Math.min(cropStartY, cropEndY);
-        const width = Math.abs(cropEndX - cropStartX);
-        const height = Math.abs(cropStartY - cropEndY);
-        
-        if (width > 10 && height > 10) {
-            const rect = new fabric.Rect({
-                left: left,
-                top: top,
-                width: width,
-                height: height,
-                fill: 'transparent',
-                stroke: '#ff9800',
-                strokeWidth: 2,
-                selectable: false,
-                evented: false,
-                isCropPreview: true
-            });
-            canvas.add(rect);
-            canvas.renderAll();
-        }
-    }
 }
 
-function handleCanvasCropMouseUp(e) {
+function beginCropDrag(pointer) {
+    if (!cropMode || !pointer) return;
+    cropStartX = pointer.x;
+    cropStartY = pointer.y;
+    cropEndX = pointer.x;
+    cropEndY = pointer.y;
+    cropDragging = true;
+    pendingCropRect = null;
+    clearCropPreviewRect();
+}
+
+function updateCropDrag(pointer) {
+    if (!cropMode || !cropDragging || !pointer) return;
+
+    cropEndX = pointer.x;
+    cropEndY = pointer.y;
+    renderCropGestureBox();
+}
+
+function finishCropDrag(pointer = null) {
     if (!cropMode) return;
-    e?.e?.preventDefault?.();
-    
-    if (cropStartX && cropStartY && cropEndX && cropEndY) {
-        const left = Math.min(cropStartX, cropEndX);
-        const top = Math.min(cropStartY, cropEndY);
-        const width = Math.abs(cropEndX - cropStartX);
-        const height = Math.abs(cropEndY - cropStartY);
-        
-        if (width > 10 && height > 10) {
-            pendingCropRect = { left, top, width, height };
-        }
+    if (pointer) {
+        cropEndX = pointer.x;
+        cropEndY = pointer.y;
     }
-    
+
+    const width = Math.abs(cropEndX - cropStartX);
+    const height = Math.abs(cropEndY - cropStartY);
+    if (cropDragging && width > 6 && height > 6) {
+        pendingCropRect = {
+            left: Math.min(cropStartX, cropEndX),
+            top: Math.min(cropStartY, cropEndY),
+            width,
+            height
+        };
+    }
+
     cropStartX = 0;
     cropStartY = 0;
     cropEndX = 0;
     cropEndY = 0;
     cropDragging = false;
+    clearCropPreviewRect();
+}
+
+function setupCropGestureLayerEvents() {
+    const layer = document.getElementById('crop-gesture-layer');
+    if (!layer || layer.dataset.cropGestureReady === 'true') return;
+
+    layer.dataset.cropGestureReady = 'true';
+
+    layer.addEventListener('pointerdown', (event) => {
+        if (!cropMode) return;
+        const pointer = getCropPointerFromEvent(event);
+        if (!pointer) return;
+        event.preventDefault();
+        layer.setPointerCapture?.(event.pointerId);
+        beginCropDrag(pointer);
+    }, { passive: false });
+
+    layer.addEventListener('pointermove', (event) => {
+        if (!cropMode || !cropDragging) return;
+        const pointer = getCropPointerFromEvent(event);
+        if (!pointer) return;
+        event.preventDefault();
+        updateCropDrag(pointer);
+    }, { passive: false });
+
+    const finishPointer = (event) => {
+        if (!cropMode) return;
+        const pointer = getCropPointerFromEvent(event);
+        event.preventDefault();
+        finishCropDrag(pointer || null);
+        layer.releasePointerCapture?.(event.pointerId);
+    };
+
+    layer.addEventListener('pointerup', finishPointer, { passive: false });
+    layer.addEventListener('pointercancel', finishPointer, { passive: false });
 }
 
 function exitCropMode() {
@@ -2750,8 +2839,7 @@ function exitCropMode() {
     cropEndX = 0;
     cropEndY = 0;
 
-    const previewRects = canvas.getObjects().filter((obj) => obj.isCropPreview);
-    previewRects.forEach((rect) => canvas.remove(rect));
+    clearCropPreviewRect();
 
     canvas.selection = true;
     canvas.forEachObject((obj) => {
