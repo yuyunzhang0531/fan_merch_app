@@ -87,6 +87,7 @@
                             </div>
                         </div>
                         <div class="template-grid" id="template-grid"></div>
+                        <div id="template-load-status" class="asset-load-status"></div>
                         <button id="template-load-more-btn" type="button" class="asset-load-more-btn btn btn-secondary" hidden>加载更多模板</button>
                         <div class="mobile-panel-footer">
                             <button type="button" class="btn btn-primary mobile-panel-confirm" data-mobile-close="template">完成选择</button>
@@ -98,7 +99,7 @@
                     <summary class="asset-drawer-summary">
                         <div>
                             <strong>🖼 贴纸素材库</strong>
-                            <span>选好后会直接加到当前画布</span>
+                            <span>选择心仪的贴纸，可涂抹选区或整张导入到当前画布</span>
                         </div>
                     </summary>
                     <div class="asset-drawer-body">
@@ -109,6 +110,7 @@
                             <button class="sticker-style-btn" data-sticker-style="magazine">日杂风</button>
                         </div>
                         <div class="template-grid" id="sticker-grid"></div>
+                        <div id="sticker-load-status" class="asset-load-status"></div>
                         <button id="sticker-load-more-btn" type="button" class="asset-load-more-btn btn btn-secondary" hidden>加载更多贴纸</button>
                         <div class="mobile-panel-footer">
                             <button type="button" class="btn btn-primary mobile-panel-confirm" data-mobile-close="sticker">完成选择</button>
@@ -147,6 +149,13 @@
                         <p style="font-size: 12px; color: #666; margin-top: 10px;">
                             💡 <b>提示：</b>点击底图、人物、文字或贴纸即可选中。
                         </p>
+                        <div id="crop-action-bar" class="crop-action-bar" hidden>
+                            <div id="crop-mode-tip" class="crop-mode-tip">裁剪模式已开启：请在人物上拖动框选要保留的区域，然后点击“确定裁剪”。</div>
+                            <div class="button-group crop-action-group">
+                                <button id="crop-cancel-btn" type="button" class="btn btn-secondary">取消裁剪</button>
+                                <button id="crop-apply-btn" type="button" class="btn btn-primary">确定裁剪</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="button-group editor-secondary-actions">
@@ -308,6 +317,10 @@
                 <button id="reset-sticker-cutout-btn" type="button" class="btn btn-secondary">重置涂抹</button>
             </div>
             <div class="sticker-cutout-canvas-shell">
+                <div id="sticker-cutout-loading" class="sticker-cutout-loading" aria-live="polite" hidden>
+                    <strong>贴纸选择区加载中</strong>
+                    <span>请稍候，首次打开或网络较慢时会多等一会。</span>
+                </div>
                 <canvas id="sticker-cutout-canvas" width="520" height="520"></canvas>
             </div>
             <div class="sticker-cutout-tip">涂抹需要的部分会高亮显示。想直接用整张素材，也可以不涂抹。</div>
@@ -318,6 +331,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=20260320-19"></script>
+    <script src="app-config.js?v=20260320-1"></script>
+    <script src="script.js?v=20260320-20"></script>
 </body>
 </html>

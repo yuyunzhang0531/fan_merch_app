@@ -1,4 +1,7 @@
-const API_BASE = window.location.origin;
+const API_BASE = (() => {
+    const configuredBase = String(window.FAN_MERCH_CONFIG?.apiBase || '').trim();
+    return configuredBase ? configuredBase.replace(/\/+$/, '') : window.location.origin;
+})();
 
 let authToken = localStorage.getItem('fanMerchToken') || '';
 let currentUser = localStorage.getItem('fanMerchEmail') || '';

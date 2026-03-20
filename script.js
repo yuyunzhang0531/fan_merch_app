@@ -135,7 +135,8 @@ let stickerCutoutState = {
     fitScale: 1,
     isDrawing: false,
     lastPoint: null,
-    brushSize: 28
+    brushSize: 28,
+    isLoading: false
 };
 
 function syncResponsiveCanvas() {
@@ -174,6 +175,7 @@ function getStickerCutoutElements() {
         modal: document.getElementById('sticker-cutout-modal'),
         canvas: document.getElementById('sticker-cutout-canvas'),
         title: document.getElementById('sticker-cutout-title'),
+        loading: document.getElementById('sticker-cutout-loading'),
         brushInput: document.getElementById('sticker-brush-size'),
         brushValue: document.getElementById('sticker-brush-size-value'),
         closeBtn: document.getElementById('close-sticker-cutout-btn'),
@@ -181,6 +183,43 @@ function getStickerCutoutElements() {
         directBtn: document.getElementById('sticker-cutout-direct-btn'),
         applyBtn: document.getElementById('sticker-cutout-apply-btn')
     };
+}
+
+function setStickerCutoutLoading(isLoading, message = '') {
+    const { modal, title, loading, canvas, brushInput, resetBtn, directBtn, applyBtn } = getStickerCutoutElements();
+    stickerCutoutState.isLoading = isLoading;
+
+    if (modal) {
+        modal.classList.toggle('is-loading', isLoading);
+    }
+
+    if (title && message) {
+        title.innerText = message;
+    }
+
+    if (loading) {
+        loading.hidden = !isLoading;
+    }
+
+    if (canvas) {
+        canvas.style.visibility = isLoading ? 'hidden' : 'visible';
+    }
+
+    if (brushInput) {
+        brushInput.disabled = isLoading;
+    }
+
+    if (resetBtn) {
+        resetBtn.disabled = isLoading;
+    }
+
+    if (directBtn) {
+        directBtn.disabled = isLoading;
+    }
+
+    if (applyBtn) {
+        applyBtn.disabled = isLoading;
+    }
 }
 
 function resizeStickerCutoutCanvas() {
@@ -374,17 +413,30 @@ function closeStickerCutoutModal() {
     modal.setAttribute('aria-hidden', 'true');
     stickerCutoutState.isDrawing = false;
     stickerCutoutState.lastPoint = null;
+    stickerCutoutState.isLoading = false;
 }
 
 function openStickerCutoutModal(url, name = '') {
     if (!requireEditorLogin('选择贴纸')) return;
     const { modal, title } = getStickerCutoutElements();
     if (!modal) return;
+
+    stickerCutoutState.sourceUrl = url;
+    stickerCutoutState.sourceName = name || '贴纸';
+    stickerCutoutState.image = null;
+    stickerCutoutState.maskCanvas = null;
+    stickerCutoutState.maskedPreviewCanvas = null;
+    stickerCutoutState.lastPoint = null;
+    stickerCutoutState.isDrawing = false;
+
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    resizeStickerCutoutCanvas();
+    setStickerCutoutLoading(true, `正在载入 ${stickerCutoutState.sourceName}，马上进入涂抹/整张导入选择区...`);
+
     const image = new Image();
     image.crossOrigin = 'anonymous';
     image.onload = () => {
-        stickerCutoutState.sourceUrl = url;
-        stickerCutoutState.sourceName = name || '贴纸';
         stickerCutoutState.image = image;
         stickerCutoutState.maskCanvas = null;
         stickerCutoutState.maskedPreviewCanvas = null;
@@ -392,12 +444,13 @@ function openStickerCutoutModal(url, name = '') {
         if (title) {
             title.innerText = `当前素材：${stickerCutoutState.sourceName}。涂抹要保留的图案，再单独加入画布。`;
         }
-        modal.classList.add('show');
-        modal.setAttribute('aria-hidden', 'false');
         resizeStickerCutoutCanvas();
         resetStickerCutoutMask();
+        setStickerCutoutLoading(false);
     };
     image.onerror = () => {
+        setStickerCutoutLoading(false, '贴纸加载失败，请重新选择其他素材。');
+        closeStickerCutoutModal();
         alert('贴纸素材加载失败，请检查图片路径');
     };
     image.src = url;
@@ -418,6 +471,7 @@ function setupStickerCutoutTools() {
     syncBrushValue();
 
     const beginDraw = (event) => {
+        if (stickerCutoutState.isLoading) return;
         event.preventDefault();
         const point = getStickerCutoutPointerPosition(event);
         if (!point) return;
@@ -427,6 +481,7 @@ function setupStickerCutoutTools() {
     };
 
     const moveDraw = (event) => {
+        if (stickerCutoutState.isLoading) return;
         if (!stickerCutoutState.isDrawing) return;
         event.preventDefault();
         const point = getStickerCutoutPointerPosition(event);
@@ -514,10 +569,38 @@ function isUserLoggedIn() {
     return Boolean(authToken && currentUser.email);
 }
 
+function goToAuthPage() {
+    window.location.href = 'auth.html';
+}
+
 function requireEditorLogin(actionText = '进行制作') {
     if (isUserLoggedIn()) return true;
-    alert(`请先登录后再${actionText}`);
+    alert(`请先登录后再${actionText}，现在将自动跳转到登录/注册页面。`);
+    goToAuthPage();
     return false;
+}
+
+function updateCropModeUI() {
+    const btn = document.getElementById('btn-crop-mode');
+    const cropActionBar = document.getElementById('crop-action-bar');
+    const canvasWrapper = document.querySelector('.canvas-container-wrapper');
+
+    if (btn) {
+        btn.style.background = cropMode ? '#ff5252' : '#ff9800';
+        btn.innerText = cropMode ? '✂️ 裁剪中' : '✂️ 裁剪模式';
+    }
+
+    if (cropActionBar) {
+        cropActionBar.hidden = !cropMode;
+    }
+
+    if (canvasWrapper) {
+        canvasWrapper.classList.toggle('is-crop-mode', cropMode);
+    }
+
+    if (canvas?.upperCanvasEl) {
+        canvas.upperCanvasEl.style.touchAction = cropMode ? 'none' : 'manipulation';
+    }
 }
 
 function updateDownloadButtonState(isBusy) {
@@ -2542,7 +2625,6 @@ function initCanvas() {
 
 function toggleCropMode() {
     if (!requireEditorLogin('裁剪人物')) return;
-    const btn = document.getElementById('btn-crop-mode');
 
     if (!cropMode) {
         const selectedObj = canvas.getActiveObject();
@@ -2570,9 +2652,6 @@ function toggleCropMode() {
             evented: obj.evented
         }));
 
-        btn.style.background = '#ff5252';
-        btn.innerText = '✅ 应用裁剪';
-
         canvas.selection = false;
         canvas.forEachObject((obj) => {
             obj.selectable = false;
@@ -2581,12 +2660,12 @@ function toggleCropMode() {
 
         canvas.discardActiveObject();
         canvas.renderAll();
-        alert('已进入裁剪模式：在人物区域拖拽一个矩形框，再点“应用裁剪”。');
+        updateCropModeUI();
         return;
     }
 
     if (!pendingCropRect) {
-        alert('请先拖拽选择要保留的区域，再点击应用裁剪');
+        alert('请先拖拽选择要保留的区域，再点击“确定裁剪”');
         return;
     }
 
@@ -2595,6 +2674,7 @@ function toggleCropMode() {
 
 function handleCanvasCropMouseDown(e) {
     if (!cropMode || !e.pointer) return;
+    e.e?.preventDefault?.();
     cropStartX = e.pointer.x;
     cropStartY = e.pointer.y;
     cropDragging = true;
@@ -2602,6 +2682,7 @@ function handleCanvasCropMouseDown(e) {
 
 function handleCanvasCropMouseMove(e) {
     if (!cropMode || !e.pointer) return;
+    e.e?.preventDefault?.();
     
     // 清除之前的预览矩形
     const previewRect = canvas.getObjects().find(obj => obj.isCropPreview);
@@ -2639,6 +2720,7 @@ function handleCanvasCropMouseMove(e) {
 
 function handleCanvasCropMouseUp(e) {
     if (!cropMode) return;
+    e?.e?.preventDefault?.();
     
     if (cropStartX && cropStartY && cropEndX && cropEndY) {
         const left = Math.min(cropStartX, cropEndX);
@@ -2668,12 +2750,6 @@ function exitCropMode() {
     cropEndX = 0;
     cropEndY = 0;
 
-    const btn = document.getElementById('btn-crop-mode');
-    if (btn) {
-        btn.style.background = '#ff9800';
-        btn.innerText = '✂️ 裁剪模式';
-    }
-
     const previewRects = canvas.getObjects().filter((obj) => obj.isCropPreview);
     previewRects.forEach((rect) => canvas.remove(rect));
 
@@ -2690,6 +2766,7 @@ function exitCropMode() {
     });
 
     originalCanvasObjects = [];
+    updateCropModeUI();
     canvas.renderAll();
 }
 
@@ -2802,6 +2879,22 @@ async function init() {
     document.getElementById('download-btn').onclick = handleDownloadClick;
     document.getElementById('reset-btn').onclick = resetDesigner;
     document.getElementById('btn-crop-mode').onclick = toggleCropMode;
+    const cropApplyBtn = document.getElementById('crop-apply-btn');
+    const cropCancelBtn = document.getElementById('crop-cancel-btn');
+    if (cropApplyBtn) {
+        cropApplyBtn.onclick = () => {
+            if (!cropMode) return;
+            if (!pendingCropRect) {
+                alert('请先在人物上框选要保留的区域');
+                return;
+            }
+            performCrop(pendingCropRect.left, pendingCropRect.top, pendingCropRect.width, pendingCropRect.height);
+        };
+    }
+    if (cropCancelBtn) {
+        cropCancelBtn.onclick = exitCropMode;
+    }
+    updateCropModeUI();
     syncTextToolState();
     scheduleResponsiveCanvasSync();
 }
