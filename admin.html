@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后台统计</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container admin-page-shell">
+        <header>
+            <div class="top-row">
+                <div>
+                    <h1>后台统计</h1>
+                    <p>查看注册人数、使用次数、下载次数和最近用户动态</p>
+                </div>
+                <button id="admin-back-home" type="button" class="btn btn-secondary">返回首页</button>
+            </div>
+        </header>
+
+        <div class="auth-panel admin-auth-panel" style="display:block; position:static; width:auto; max-height:none; overflow:visible;">
+            <h3>管理员访问</h3>
+            <div class="auth-form-row">
+                <input id="admin-key-input" type="password" placeholder="输入管理员密钥">
+            </div>
+            <div class="button-group auth-action-group">
+                <button id="admin-load-btn" type="button" class="btn btn-primary">加载统计</button>
+            </div>
+            <div id="admin-msg" class="auth-message"></div>
+        </div>
+
+        <div class="admin-stats-grid" id="admin-stats-grid">
+            <div class="library-card admin-stat-card"><h4>总注册人数</h4><div id="stat-total-users" class="admin-stat-value">-</div></div>
+            <div class="library-card admin-stat-card"><h4>今日新增</h4><div id="stat-today-users" class="admin-stat-value">-</div></div>
+            <div class="library-card admin-stat-card"><h4>总使用记录</h4><div id="stat-total-usage" class="admin-stat-value">-</div></div>
+            <div class="library-card admin-stat-card"><h4>总下载次数</h4><div id="stat-total-downloads" class="admin-stat-value">-</div></div>
+            <div class="library-card admin-stat-card"><h4>生成作品数</h4><div id="stat-total-generated" class="admin-stat-value">-</div></div>
+            <div class="library-card admin-stat-card"><h4>当前在线会话</h4><div id="stat-active-sessions" class="admin-stat-value">-</div></div>
+        </div>
+
+        <div class="account-library admin-dashboard-lists">
+            <div class="library-card">
+                <h4>最近注册用户</h4>
+                <div id="admin-recent-users" class="small-list">请先加载统计</div>
+            </div>
+            <div class="library-card">
+                <h4>最近使用动态</h4>
+                <div id="admin-recent-usage" class="small-list">请先加载统计</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

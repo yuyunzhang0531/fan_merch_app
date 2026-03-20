@@ -1,0 +1,321 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>✨ 追星物料 AI 生成器</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+</head>
+<body>
+    <div id="mobile-sheet-backdrop" class="mobile-sheet-backdrop" hidden></div>
+    <div id="mobile-nav-backdrop" class="mobile-nav-backdrop" hidden></div>
+    <aside id="mobile-nav-drawer" class="mobile-nav-drawer" aria-hidden="true">
+        <div class="mobile-nav-drawer-header">
+            <strong>菜单</strong>
+            <button id="mobile-nav-close" type="button" class="mobile-nav-close" aria-label="关闭菜单">×</button>
+        </div>
+        <div id="mobile-nav-status" class="mobile-nav-status">未登录 ｜ 积分：0</div>
+        <div class="mobile-nav-actions">
+            <button id="mobile-nav-auth" type="button" class="btn btn-secondary">个人主页</button>
+            <button id="mobile-nav-records" type="button" class="btn btn-secondary">记录/图库</button>
+            <button id="mobile-nav-recharge" type="button" class="btn btn-primary" style="display:none;">充值</button>
+            <button id="mobile-nav-logout" type="button" class="btn btn-danger" style="display:none;">退出登录</button>
+        </div>
+    </aside>
+    <div class="container">
+        <header class="app-header">
+            <div class="mobile-app-bar">
+                <button id="mobile-menu-toggle" type="button" class="mobile-menu-toggle" aria-label="打开菜单">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+                <div class="mobile-app-branding">
+                    <div class="mobile-app-title decorative-title">
+                        <span class="title-sparkle">✦</span>
+                        <span>追星物料 AI 生成器</span>
+                        <span class="title-sparkle">✦</span>
+                    </div>
+                    <div class="mobile-app-subtitle">选模板、做画布、出应援图</div>
+                </div>
+            </div>
+            <div class="top-row">
+                <div class="app-brand">
+                    <h1 class="decorative-title">
+                        <span class="title-sparkle">✦</span>
+                        <span>追星物料 AI 生成器</span>
+                        <span class="title-sparkle">✦</span>
+                    </h1>
+                    <p>选模板 + 传照片 = 专属应援物</p>
+                </div>
+                <div class="account-box app-account-bar">
+                    <div id="account-status">未登录</div>
+                    <button id="open-auth-btn" type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:6px 10px;">账号</button>
+                    <button id="open-records-btn" type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:6px 10px;">记录/图库</button>
+                    <button id="recharge-btn" type="button" class="btn btn-primary" style="font-size:0.75rem;padding:6px 10px; display:none;">💰 充值</button>
+                    <button id="logout-btn" type="button" class="btn btn-danger" style="font-size:0.75rem;padding:6px 10px; display:none;">登出</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="template-section">
+                <details class="asset-drawer template-drawer" open>
+                    <summary class="asset-drawer-summary">
+                        <div>
+                            <strong>🧱 模板库</strong>
+                            <span>先选模板，再继续制作</span>
+                        </div>
+                    </summary>
+                    <div class="asset-drawer-body template-drawer-body">
+                        <div class="template-filter-panel template-filter-panel--inside">
+                            <h2>📋 选择类型</h2>
+                            <div class="category-filters">
+                                <button class="filter-btn active" data-category="all">全部</button>
+                                <button class="filter-btn" data-category="badge">吧唧</button>
+                                <button class="filter-btn" data-category="photocard">小卡</button>
+                                <button class="filter-btn" data-category="photobooth">大头贴</button>
+                            </div>
+
+                            <h2 style="margin-top: 20px;">🎨 选择风格</h2>
+                            <div class="style-filters">
+                                <button class="style-btn active" data-style="all">全部</button>
+                                <button class="style-btn" data-style="sweet">甜酷风</button>
+                                <button class="style-btn" data-style="ins">ins风</button>
+                                <button class="style-btn" data-style="weird">搞怪</button>
+                            </div>
+                        </div>
+                        <div class="template-grid" id="template-grid"></div>
+                        <div class="mobile-panel-footer">
+                            <button type="button" class="btn btn-primary mobile-panel-confirm" data-mobile-close="template">完成选择</button>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="asset-drawer sticker-drawer">
+                    <summary class="asset-drawer-summary">
+                        <div>
+                            <strong>🖼 贴纸素材库</strong>
+                            <span>选好后会直接加到当前画布</span>
+                        </div>
+                    </summary>
+                    <div class="asset-drawer-body">
+                        <div class="sticker-style-filters">
+                            <button class="sticker-style-btn active" data-sticker-style="all">全部</button>
+                            <button class="sticker-style-btn" data-sticker-style="ins">ins风</button>
+                            <button class="sticker-style-btn" data-sticker-style="sweet">甜美风</button>
+                            <button class="sticker-style-btn" data-sticker-style="magazine">日杂风</button>
+                        </div>
+                        <div class="template-grid" id="sticker-grid"></div>
+                        <div class="mobile-panel-footer">
+                            <button type="button" class="btn btn-primary mobile-panel-confirm" data-mobile-close="sticker">完成选择</button>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <div class="action-section">
+                <div class="studio-shell">
+                    <div class="studio-shell-header">
+                        <div>
+                            <h2>🎬 制作工作台</h2>
+                            <p>画布优先，手机上切换工具就能继续编辑</p>
+                        </div>
+                        <span class="studio-badge">Mobile Ready</span>
+                    </div>
+
+                    <div class="layer-control-panel fixed-layer-panel">
+                        <h3>✨ 图层管理</h3>
+                        <div class="layer-actions">
+                            <button id="btn-bring-front" class="layer-btn">置于顶层</button>
+                            <button id="btn-forward" class="layer-btn">上移一层</button>
+                            <button id="btn-backward" class="layer-btn">下移一层</button>
+                            <button id="btn-send-back" class="layer-btn">置于底层</button>
+                            <button id="btn-toggle-template-lock" class="layer-btn" type="button">🔓 锁定模板</button>
+                            <button id="btn-crop-mode" class="layer-btn" type="button" style="background:#ff9800; color:white;">✂️ 裁剪模式</button>
+                        </div>
+                    </div>
+
+                    <div class="canvas-preview-box studio-canvas-box" style="margin-top: 20px;">
+                        <h3>🖼 画布预览</h3>
+                        <div class="canvas-container-wrapper" style="border: 2px solid #eee; background: #f9f9f9; overflow: hidden;">
+                            <canvas id="main-canvas"></canvas>
+                        </div>
+                        <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                            💡 <b>提示：</b>点击底图、人物、文字或贴纸即可选中。
+                        </p>
+                    </div>
+
+                    <div class="button-group editor-secondary-actions">
+                        <button id="duplicate-btn" type="button" class="btn btn-secondary">📄 复制选中</button>
+                        <button id="delete-btn" type="button" class="btn btn-danger">🗑️ 删除选中</button>
+                    </div>
+
+                    <div class="selection-info studio-selection-info" style="margin-top: 15px; font-size: 13px;">
+                        <p>已选底图：<span id="template-name" style="color:#d63384;">未选择</span></p>
+                    </div>
+
+                    <div class="mobile-tool-switcher" aria-label="移动端工具切换">
+                        <button type="button" class="mobile-tool-tab" data-tool-target="photo">人物抠图</button>
+                        <button type="button" class="mobile-tool-tab" data-tool-target="text">文字功能</button>
+                    </div>
+                    <div class="mobile-flow-tip">先在上方选素材，再到画布继续编辑；人物抠图和文字功能可在下方展开，完成后到底部下载或重置。</div>
+
+                    <div class="editor-tool-stack">
+                        <section class="editor-tool-panel is-active" data-tool-panel="photo">
+                        <h3 class="editor-panel-title">📸 人物与抠图</h3>
+                        <div class="upload-area" id="upload-area">
+                            <input type="file" id="photo-upload" accept="image/*" hidden>
+                            <p>📸 点击上传爱豆照片</p>
+                            <small>支持 jpg/png，自动 AI 抠图</small>
+                        </div>
+
+                        <div class="button-group" style="margin-top: 10px;">
+                            <button id="generate-btn" type="button" class="btn btn-primary" disabled>✨ 开始 AI 抠图</button>
+                        </div>
+
+                        <div id="loading-status" style="display:none; margin:10px 0 15px; color:#d63384; font-weight:600; text-align:center;">
+                            ⏳ AI 正在智能抠图，请稍候...
+                        </div>
+
+                        <div class="cutout-library-panel">
+                            <div class="cutout-library-header">
+                                <h3>🧍 本地抠图库</h3>
+                                <button id="refresh-cutout-library-btn" type="button" class="btn btn-secondary cutout-refresh-btn">刷新</button>
+                            </div>
+                            <p class="cutout-library-tip">每次抠图完成后都会自动保存在当前浏览器里，可以反复放回画布继续做图。</p>
+                            <div id="cutout-library-status" class="cutout-library-status">正在读取本地人物库...</div>
+                            <div id="cutout-library-grid" class="cutout-library-grid"></div>
+                        </div>
+                        <div class="mobile-panel-footer">
+                            <button type="button" class="btn btn-primary mobile-panel-confirm" data-mobile-close="panel">完成</button>
+                        </div>
+                        </section>
+
+                        <section class="editor-tool-panel" data-tool-panel="text">
+                        <h3 class="editor-panel-title">🔤 文字设计</h3>
+                        <div class="text-tool-panel">
+                            <div class="text-tool-header">
+                                <h3>🔤 文字工具</h3>
+                                <div id="text-tool-status" class="text-tool-status">输入文字后可添加到画布</div>
+                            </div>
+                            <textarea id="text-input" class="text-input" rows="3" placeholder="输入应援文案，比如：宝宝今天也闪闪发光"></textarea>
+                            <div class="text-tool-controls">
+                                <label class="text-control-field text-control-field-stack">
+                                    <span>字体风格</span>
+                                    <select id="text-style-preset" class="text-select">
+                                        <option value="default">元气常规</option>
+                                        <option value="cute">可爱体</option>
+                                        <option value="handwrite">手写体</option>
+                                        <option value="bold">粗体</option>
+                                    </select>
+                                </label>
+                                <label class="text-control-field">
+                                    <span>文字颜色</span>
+                                    <input id="text-color" type="color" value="#ff4f93">
+                                </label>
+                                <label class="text-control-field">
+                                    <span>字号</span>
+                                    <input id="text-size" type="range" min="18" max="120" step="2" value="42">
+                                    <strong id="text-size-value">42px</strong>
+                                </label>
+                                <label class="text-control-field">
+                                    <span>描边色</span>
+                                    <input id="text-stroke-color" type="color" value="#ffffff">
+                                </label>
+                                <label class="text-control-field">
+                                    <span>描边粗细</span>
+                                    <input id="text-stroke-width" type="range" min="0" max="12" step="1" value="0">
+                                    <strong id="text-stroke-width-value">0px</strong>
+                                </label>
+                                <label class="text-control-field">
+                                    <span>阴影色</span>
+                                    <input id="text-shadow-color" type="color" value="#ff9ac3">
+                                </label>
+                                <label class="text-control-field">
+                                    <span>阴影强度</span>
+                                    <input id="text-shadow-blur" type="range" min="0" max="30" step="1" value="0">
+                                    <strong id="text-shadow-blur-value">0</strong>
+                                </label>
+                            </div>
+                            <div class="button-group text-tool-actions">
+                                <button id="add-text-btn" type="button" class="btn btn-primary">添加文字</button>
+                                <button id="apply-text-style-btn" type="button" class="btn btn-secondary">应用到选中文字</button>
+                            </div>
+                        </div>
+                        <div class="mobile-panel-footer">
+                            <button type="button" class="btn btn-primary mobile-panel-confirm" data-mobile-close="panel">完成</button>
+                        </div>
+                        </section>
+
+                    </div>
+
+                    <div class="button-group editor-bottom-actions">
+                        <button id="download-btn" type="button" class="btn btn-success">⬇️ 下载作品</button>
+                        <button id="reset-btn" type="button" class="btn btn-secondary">🔄 重置画布</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="recharge-modal" class="modal-overlay" aria-hidden="true">
+        <div class="recharge-modal-card">
+            <button id="close-recharge-btn" type="button" class="recharge-close-btn">×</button>
+            <h3>积分充值</h3>
+            <p id="recharge-message" class="recharge-message">下载作品需要 1 个积分，当前积分不足，请先充值。</p>
+            
+            <div class="recharge-section">
+                <h4 style="color:#4d2470; margin-bottom:10px; font-size:14px;">充值比例：0.1 元 = 1 积分</h4>
+                <div class="recharge-quick-options">
+                    <button type="button" class="quick-recharge-btn" data-amount="1">¥0.1 (1积分)</button>
+                    <button type="button" class="quick-recharge-btn" data-amount="5">¥0.5 (5积分)</button>
+                    <button type="button" class="quick-recharge-btn" data-amount="10">¥1.0 (10积分)</button>
+                </div>
+                
+                <div style="margin-top: 14px;">
+                    <label style="display:block; color:#5d4d73; font-size:13px; margin-bottom:8px;">或自定义金额（元）：</label>
+                    <input id="recharge-custom-amount" type="number" min="0" step="0.1" placeholder="请输入金额，如 2.5" style="width:100%; padding:10px; border:1px solid #eadfff; border-radius:8px; font-size:14px;">
+                    <small style="color:#999; display:block; margin-top:5px;">将按 0.1 元 1 积分计算</small>
+                </div>
+            </div>
+            
+            <div class="recharge-qr-box">
+                <img src="image/wechatpay.jpg" alt="收款码">
+                <p>扫码支付后点击下方按钮完成充值入账</p>
+            </div>
+            <div class="button-group recharge-action-group">
+                <button id="cancel-recharge-btn" type="button" class="btn btn-secondary">稍后再说</button>
+                <button id="confirm-recharge-btn" type="button" class="btn btn-success">我已完成充值</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="sticker-cutout-modal" class="modal-overlay" aria-hidden="true">
+        <div class="sticker-cutout-card">
+            <button id="close-sticker-cutout-btn" type="button" class="recharge-close-btn">×</button>
+            <h3>涂抹选择贴纸图案</h3>
+            <p id="sticker-cutout-title" class="sticker-cutout-title">在贴纸图上涂抹想保留的图案，再单独放进画布。</p>
+            <div class="sticker-cutout-toolbar">
+                <label class="sticker-cutout-brush-label">
+                    <span>画笔大小</span>
+                    <input id="sticker-brush-size" type="range" min="12" max="72" step="2" value="28">
+                    <strong id="sticker-brush-size-value">28</strong>
+                </label>
+                <button id="reset-sticker-cutout-btn" type="button" class="btn btn-secondary">重置涂抹</button>
+            </div>
+            <div class="sticker-cutout-canvas-shell">
+                <canvas id="sticker-cutout-canvas" width="520" height="520"></canvas>
+            </div>
+            <div class="sticker-cutout-tip">涂抹需要的部分会高亮显示。想直接用整张素材，也可以不涂抹。</div>
+            <div class="button-group sticker-cutout-actions">
+                <button id="sticker-cutout-direct-btn" type="button" class="btn btn-secondary">整张添加</button>
+                <button id="sticker-cutout-apply-btn" type="button" class="btn btn-primary">添加选中图案</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js?v=20260320-19"></script>
+</body>
+</html>

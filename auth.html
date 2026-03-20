@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>账号中心</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container" style="max-width: 760px;">
+        <header>
+            <div class="top-row">
+                <div>
+                    <h1>账号中心</h1>
+                    <p>登录、注册和退出都在这个页面处理，不影响制图页</p>
+                </div>
+                <button id="back-home-btn" type="button" class="btn btn-secondary" style="font-size:0.85rem;padding:8px 12px;">返回制图页</button>
+            </div>
+        </header>
+
+        <div class="auth-panel" style="display:block; position:static; width:auto; max-height:none; overflow:visible; box-shadow: 0 10px 30px rgba(0,0,0,0.08);">
+            <h3>注册 / 登录</h3>
+            <div class="auth-form-row">
+                <input id="auth-email" type="email" placeholder="邮箱">
+                <input id="auth-password" type="password" placeholder="密码">
+            </div>
+            <div class="button-group auth-action-group">
+                <button id="register-btn" type="button" class="btn btn-primary">注册</button>
+                <button id="login-btn" type="button" class="btn btn-success">登录</button>
+                <button id="logout-btn" type="button" class="btn btn-danger">登出</button>
+            </div>
+            <div id="auth-msg" class="auth-message"></div>
+        </div>
+
+        <div class="auth-panel" style="display:block; position:static; width:auto; max-height:none; overflow:visible; margin-top:16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08);">
+            <h3>每日签到</h3>
+            <p style="color: #6a5b83; margin-bottom: 12px; font-size: 13px;">每天签到获得 2 积分，坚持签到不间断</p>
+            <button id="check-in-btn" type="button" class="btn btn-success" style="width: 100%;">🎁 今日签到（+2 积分）</button>
+            <div id="check-in-status" class="auth-message" style="margin-top: 10px; text-align: center; font-size: 13px;"></div>
+        </div>
+
+        <div class="auth-panel" style="display:block; position:static; width:auto; max-height:none; overflow:visible; margin-top:16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08);">
+            <h3>当前状态</h3>
+            <div id="account-status" class="auth-info">未登录</div>
+            <div id="account-info" class="auth-info" style="white-space: pre-line;"></div>
+            <div class="account-library" style="margin-top:16px;">
+                <div class="library-card">
+                    <h4>最近浏览记录</h4>
+                    <div id="history-list" class="small-list">请先登录查看</div>
+                </div>
+                <div class="library-card">
+                    <h4>已生成图库</h4>
+                    <div id="gallery-grid-user" class="gallery-grid-user"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gallery-preview-modal" class="modal-overlay" aria-hidden="true">
+        <div class="gallery-preview-card">
+            <button id="gallery-preview-close" type="button" class="recharge-close-btn">×</button>
+            <img id="gallery-preview-image" src="" alt="作品预览">
+            <div id="gallery-preview-time" class="gallery-preview-time"></div>
+        </div>
+    </div>
+
+    <script src="auth.js?v=20260319-4"></script>
+</body>
+</html>
