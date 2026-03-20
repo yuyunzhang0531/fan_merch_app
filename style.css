@@ -85,6 +85,23 @@ header p {
 .auth-action-group {
     margin-top: 12px;
 }
+
+.auth-action-group .btn {
+    min-height: 44px;
+}
+
+@media screen and (max-width: 640px) {
+    .auth-action-group {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media screen and (max-width: 420px) {
+    .auth-action-group {
+        grid-template-columns: 1fr;
+    }
+}
+
 .auth-message {
     font-size: 12px;
     margin-top: 8px;

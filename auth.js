@@ -50,6 +50,10 @@ function setAuthMessage(message) {
     if (el) el.innerText = message;
 }
 
+function goBackToEditor() {
+    window.location.href = 'index.html';
+}
+
 async function loadUserData() {
     if (!authToken || !currentUser) {
         currentUserData = null;
@@ -201,6 +205,7 @@ function setupGalleryEvents() {
 
 function initAuthPage() {
     const backHomeBtn = document.getElementById('back-home-btn');
+    const backHomeInlineBtn = document.getElementById('back-home-inline-btn');
     const registerBtn = document.getElementById('register-btn');
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
@@ -210,9 +215,13 @@ function initAuthPage() {
 
     setupGalleryEvents();
 
-    backHomeBtn.onclick = () => {
-        window.location.href = 'index.html';
-    };
+    if (backHomeBtn) {
+        backHomeBtn.onclick = goBackToEditor;
+    }
+
+    if (backHomeInlineBtn) {
+        backHomeInlineBtn.onclick = goBackToEditor;
+    }
 
     registerBtn.onclick = async () => {
         const nextEmail = email.value.trim();
@@ -252,7 +261,8 @@ function initAuthPage() {
             persistCredits(currentUserData?.credits || 0);
             renderAccountInfo();
             updateCheckInStatus();
-            setAuthMessage('登录成功，返回制图页即可继续使用');
+            setAuthMessage('登录成功，正在返回制图页...');
+            window.setTimeout(goBackToEditor, 300);
         } catch (error) {
             setAuthMessage(error.message || '登录失败');
         }
