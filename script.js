@@ -4,7 +4,10 @@
  */
 
 const API_BASE = window.location.origin;
-const IMAGE_CDN_BASE = 'https://cdn.jsdelivr.net/gh/yuyunzhang0531/fan_merch_app/';
+const ASSET_BASE = (() => {
+    const configuredBase = String(window.FAN_MERCH_CONFIG?.assetBase || '').trim();
+    return configuredBase ? configuredBase.replace(/\/+$/, '') : '';
+})();
 
 function buildAssetUrl(assetPath) {
     const normalizedPath = String(assetPath || '').trim();
@@ -12,7 +15,10 @@ function buildAssetUrl(assetPath) {
     if (/^(https?:)?\/\//i.test(normalizedPath) || normalizedPath.startsWith('data:') || normalizedPath.startsWith('blob:')) {
         return normalizedPath;
     }
-    return `${IMAGE_CDN_BASE}${normalizedPath.replace(/^\/+/, '')}`;
+    if (!ASSET_BASE) {
+        return normalizedPath.replace(/^\/+/, '');
+    }
+    return `${ASSET_BASE}/${normalizedPath.replace(/^\/+/, '')}`;
 }
 
 const baseTemplates = [
@@ -580,9 +586,18 @@ function goToAuthPage(actionText = '') {
     window.location.assign('auth.html');
 }
 
+function confirmAuthRedirect(actionText = '进行操作') {
+    const shouldRedirect = window.confirm(`请先登录后再${actionText}。\n点击“确定”前往登录/注册页面。`);
+    if (!shouldRedirect) {
+        return false;
+    }
+    goToAuthPage(actionText);
+    return true;
+}
+
 function requireEditorLogin(actionText = '进行制作') {
     if (isUserLoggedIn()) return true;
-    goToAuthPage(actionText);
+    confirmAuthRedirect(actionText);
     return false;
 }
 
@@ -1657,7 +1672,7 @@ function setupMobileNavMenu() {
         rechargeBtn.onclick = () => {
             closeNav();
             if (!authToken || !currentUser.email) {
-                goToAuthPage('充值');
+                confirmAuthRedirect('充值');
                 return;
             }
             openRechargeModal('随时充值，赶快增加积分吧！');
@@ -1727,7 +1742,7 @@ async function saveGeneratedToLibrary(imageData) {
 
 async function handleRechargeConfirm() {
     if (!authToken || !currentUser.email) {
-        goToAuthPage('充值');
+        confirmAuthRedirect('充值');
         return;
     }
 
@@ -1787,7 +1802,7 @@ function initAuthEntry() {
     if (rechargeBtn) {
         rechargeBtn.onclick = () => {
             if (!authToken || !currentUser.email) {
-                goToAuthPage('充值');
+                confirmAuthRedirect('充值');
                 return;
             }
             openRechargeModal('随时充值，赶快增加积分吧！');
