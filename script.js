@@ -3,64 +3,77 @@
  * 制图页：包含独立账号入口、积分下载和充值弹窗
  */
 
-const API_BASE = window.location.origin;
+const API_BASE = (() => {
+    const configuredBase = String(window.FAN_MERCH_CONFIG?.apiBase || '').trim();
+    return configuredBase ? configuredBase.replace(/\/+$/, '') : window.location.origin;
+})();
+const IMAGE_CDN_BASE = 'https://cdn.jsdelivr.net/gh/yuyunzhang0531/fan_merch_app/';
+
+function buildAssetUrl(assetPath) {
+    const normalizedPath = String(assetPath || '').trim();
+    if (!normalizedPath) return '';
+    if (/^(https?:)?\/\//i.test(normalizedPath) || normalizedPath.startsWith('data:') || normalizedPath.startsWith('blob:')) {
+        return normalizedPath;
+    }
+    return `${IMAGE_CDN_BASE}${normalizedPath.replace(/^\/+/, '')}`;
+}
 
 const baseTemplates = [
-    { id: 1, name: '甜酷风吧唧1', category: 'badge', style: 'sweet', url: 'image/sweet_baji.jpg' },
-    { id: 2, name: '横板黑粉爱心小卡1', category: 'photocard', style: 'ins', url: 'image/hengbanxiaoka 1.2.png' },
-    { id: 3, name: '横板黑粉爱心小卡2', category: 'photocard', style: 'ins', url: 'image/横板 1.1.png' },
-    { id: 4, name: '横板黑粉爱心小卡3', category: 'photocard', style: 'ins', url: 'image/横板 2.1 框.png' },
-    { id: 5, name: '横板黑粉爱心小卡4', category: 'photocard', style: 'ins', url: 'image/横板 2.1.png' },
-    { id: 6, name: '横板黑粉爱心小卡5', category: 'photocard', style: 'ins', url: 'image/横板 2.2.png' },
-    { id: 7, name: '横板黑粉爱心小卡6', category: 'photocard', style: 'ins', url: 'image/横板 3.1.png' },
-    { id: 8, name: '横板黑粉爱心小卡7', category: 'photocard', style: 'ins', url: 'image/横板 3.2.png' },
-     { id: 9, name: '横板黑粉小卡8', category: 'photocard', style: 'ins', url: 'image/横板 4.1.png' },
-    { id: 10, name: '横板黑粉小卡9', category: 'photocard', style: 'ins', url: 'image/横板 4.2.png' },
-    { id: 11, name: '蛋糕吧唧1', category: 'badge', style: 'sweet', url: 'image/蛋糕吧唧1.png' },
-    { id: 12, name: '蛋糕吧唧2', category: 'badge', style: 'sweet', url: 'image/蛋糕吧唧2.png' },
-    { id: 13, name: '蛋糕吧唧3', category: 'badge', style: 'sweet', url: 'image/蛋糕吧唧3.png' },
-    { id: 14, name: '猫爪吧唧', category: 'badge', style: 'sweet', url: 'image/猫爪吧唧.png' },
-    { id: 15, name: 'ins风吧唧1', category: 'badge', style: 'ins', url: 'image/吧唧1cai.png' },
-    { id: 16, name: 'ins风吧唧2', category: 'badge', style: 'ins', url: 'image/吧唧2cai.png' },
-    { id: 17, name: '奥利奥卡背', category: 'photocard', style: 'ins', url: 'image/奥利奥卡背.png' },
-    { id: 18, name: '奥利奥小卡正面', category: 'photocard', style: 'ins', url: 'image/奥利奥小卡正面.png' },
-    { id: 19, name: '奥利奥mini三宫格卡背', category: 'photobooth', style: 'ins', url: 'image/奥利奥mini三宫格卡背.png' },
-    { id: 20, name: '奥利奥mini三宫格正面', category: 'photobooth', style: 'ins', url: 'image/奥利奥mini三宫格正面.png' },
-    { id: 21, name: '灌汤包搞怪吧唧1', category: 'badge', style: 'weird', url: 'image/灌汤包吧唧1.png' },
-    { id: 22, name: '灌汤包搞怪吧唧2', category: 'badge', style: 'weird', url: 'image/灌汤包吧唧2.png' },
-    { id: 23, name: '灌汤包小卡1', category: 'photocard', style: 'weird', url: 'image/灌汤包小卡1.png' },
-    { id: 24, name: '灌汤包小卡2', category: 'photocard', style: 'weird', url: 'image/灌汤包小卡2.png' },
-    { id: 25, name: '灌汤包mini三宫格1', category: 'photobooth', style: 'weird', url: 'image/灌汤包mini三宫格1.png' },
-    { id: 26, name: '灌汤包mini三宫格2', category: 'photobooth', style: 'weird', url: 'image/灌汤包mini三宫格2.png' }
+    { id: 1, name: '甜酷风吧唧1', category: 'badge', style: 'sweet', url: buildAssetUrl('image/sweet_baji.jpg') },
+    { id: 2, name: '横板黑粉爱心小卡1', category: 'photocard', style: 'ins', url: buildAssetUrl('image/hengbanxiaoka 1.2.png') },
+    { id: 3, name: '横板黑粉爱心小卡2', category: 'photocard', style: 'ins', url: buildAssetUrl('image/横板 1.1.png') },
+    { id: 4, name: '横板黑粉爱心小卡3', category: 'photocard', style: 'ins', url: buildAssetUrl('image/横板 2.1 框.png') },
+    { id: 5, name: '横板黑粉爱心小卡4', category: 'photocard', style: 'ins', url: buildAssetUrl('image/横板 2.1.png') },
+    { id: 6, name: '横板黑粉爱心小卡5', category: 'photocard', style: 'ins', url: buildAssetUrl('image/横板 2.2.png') },
+    { id: 7, name: '横板黑粉爱心小卡6', category: 'photocard', style: 'ins', url: buildAssetUrl('image/横板 3.1.png') },
+    { id: 8, name: '横板黑粉爱心小卡7', category: 'photocard', style: 'ins', url: buildAssetUrl('image/横板 3.2.png') },
+     { id: 9, name: '横板黑粉小卡8', category: 'photocard', style: 'ins', url: buildAssetUrl('image/横板 4.1.png') },
+    { id: 10, name: '横板黑粉小卡9', category: 'photocard', style: 'ins', url: buildAssetUrl('image/横板 4.2.png') },
+    { id: 11, name: '蛋糕吧唧1', category: 'badge', style: 'sweet', url: buildAssetUrl('image/蛋糕吧唧1.png') },
+    { id: 12, name: '蛋糕吧唧2', category: 'badge', style: 'sweet', url: buildAssetUrl('image/蛋糕吧唧2.png') },
+    { id: 13, name: '蛋糕吧唧3', category: 'badge', style: 'sweet', url: buildAssetUrl('image/蛋糕吧唧3.png') },
+    { id: 14, name: '猫爪吧唧', category: 'badge', style: 'sweet', url: buildAssetUrl('image/猫爪吧唧.png') },
+    { id: 15, name: 'ins风吧唧1', category: 'badge', style: 'ins', url: buildAssetUrl('image/吧唧1cai.png') },
+    { id: 16, name: 'ins风吧唧2', category: 'badge', style: 'ins', url: buildAssetUrl('image/吧唧2cai.png') },
+    { id: 17, name: '奥利奥卡背', category: 'photocard', style: 'ins', url: buildAssetUrl('image/奥利奥卡背.png') },
+    { id: 18, name: '奥利奥小卡正面', category: 'photocard', style: 'ins', url: buildAssetUrl('image/奥利奥小卡正面.png') },
+    { id: 19, name: '奥利奥mini三宫格卡背', category: 'photobooth', style: 'ins', url: buildAssetUrl('image/奥利奥mini三宫格卡背.png') },
+    { id: 20, name: '奥利奥mini三宫格正面', category: 'photobooth', style: 'ins', url: buildAssetUrl('image/奥利奥mini三宫格正面.png') },
+    { id: 21, name: '灌汤包搞怪吧唧1', category: 'badge', style: 'weird', url: buildAssetUrl('image/灌汤包吧唧1.png') },
+    { id: 22, name: '灌汤包搞怪吧唧2', category: 'badge', style: 'weird', url: buildAssetUrl('image/灌汤包吧唧2.png') },
+    { id: 23, name: '灌汤包小卡1', category: 'photocard', style: 'weird', url: buildAssetUrl('image/灌汤包小卡1.png') },
+    { id: 24, name: '灌汤包小卡2', category: 'photocard', style: 'weird', url: buildAssetUrl('image/灌汤包小卡2.png') },
+    { id: 25, name: '灌汤包mini三宫格1', category: 'photobooth', style: 'weird', url: buildAssetUrl('image/灌汤包mini三宫格1.png') },
+    { id: 26, name: '灌汤包mini三宫格2', category: 'photobooth', style: 'weird', url: buildAssetUrl('image/灌汤包mini三宫格2.png') }
 ];
 
 const stickerTemplates = [
-    { id: 1, name: 'ins贴纸', style: 'ins', url: 'image/ins贴纸.PNG' },
-    { id: 2, name: '甜美风贴纸1', style: 'sweet', url: 'image/yinfu.png' },
-    { id: 3, name: '贴纸2', style: 'sweet', url: 'image/1Stan海外素材.png' },
-    { id: 4, name: '贴纸3', style: 'sweet', url: 'image/2Stan海外素材.png' },
-    { id: 5, name: '贴纸4', style: 'sweet', url: 'image/3Stan海外素材.png' },
-    { id: 6, name: '贴纸5', style: 'sweet', url: 'image/4Stan海外素材.png' },
-    { id: 7, name: '贴纸6', style: 'sweet', url: 'image/5Stan海外素材.png' },
-    { id: 8, name: '贴纸7', style: 'sweet', url: 'image/6Stan海外素材.png' },
-    { id: 9, name: '贴纸8', style: 'sweet', url: 'image/7Stan海外素材.png' },
-    { id: 10, name: '贴纸9', style: 'sweet', url: 'image/8Stan海外素材.png' },
-    { id: 11, name: 'Stan海外贴纸10', style: 'sweet', url: 'image/10Stan海外素材.png' },
-    { id: 12, name: 'Stan海外贴纸11', style: 'sweet', url: 'image/11Stan海外素材.png' },
-    { id: 13, name: 'Stan海外贴纸13', style: 'sweet', url: 'image/13Stan海外素材.png' },
-    { id: 14, name: 'Stan海外贴纸22', style: 'sweet', url: 'image/22Stan海外素材.png' },
-    { id: 15, name: 'Stan海外贴纸24', style: 'sweet', url: 'image/24Stan海外素材.png' },
-    { id: 16, name: 'Stan海外贴纸25', style: 'sweet', url: 'image/25Stan海外素材.png' },
-    { id: 17, name: 'Stan海外贴纸26', style: 'sweet', url: 'image/26Stan海外素材.png' },
-    { id: 18, name: 'Stan海外贴纸27', style: 'sweet', url: 'image/27Stan海外素材.png' },
-    { id: 19, name: 'Stan海外贴纸45', style: 'sweet', url: 'image/45Stan海外素材.png' },
-    { id: 20, name: 'Stan海外贴纸49', style: 'sweet', url: 'image/49Stan海外素材.png' },
-    { id: 21, name: 'Stan海外贴纸50', style: 'sweet', url: 'image/50Stan海外素材.png' },
-    { id: 22, name: 'Stan海外贴纸56', style: 'sweet', url: 'image/56Stan海外素材.png' },
-    { id: 23, name: 'Stan海外贴纸58', style: 'sweet', url: 'image/58Stan海外素材.png' },
-    { id: 24, name: 'Stan海外贴纸61', style: 'sweet', url: 'image/61Stan海外素材.png' },
-    { id: 25, name: '日杂贴纸1', style: 'magazine', url: 'image/1.png' },
-    { id: 26, name: '日杂贴纸2', style: 'magazine', url: 'image/2.png' }
+    { id: 1, name: 'ins贴纸', style: 'ins', url: buildAssetUrl('image/ins贴纸.PNG') },
+    { id: 2, name: '甜美风贴纸1', style: 'sweet', url: buildAssetUrl('image/yinfu.png') },
+    { id: 3, name: '贴纸2', style: 'sweet', url: buildAssetUrl('image/1Stan海外素材.png') },
+    { id: 4, name: '贴纸3', style: 'sweet', url: buildAssetUrl('image/2Stan海外素材.png') },
+    { id: 5, name: '贴纸4', style: 'sweet', url: buildAssetUrl('image/3Stan海外素材.png') },
+    { id: 6, name: '贴纸5', style: 'sweet', url: buildAssetUrl('image/4Stan海外素材.png') },
+    { id: 7, name: '贴纸6', style: 'sweet', url: buildAssetUrl('image/5Stan海外素材.png') },
+    { id: 8, name: '贴纸7', style: 'sweet', url: buildAssetUrl('image/6Stan海外素材.png') },
+    { id: 9, name: '贴纸8', style: 'sweet', url: buildAssetUrl('image/7Stan海外素材.png') },
+    { id: 10, name: '贴纸9', style: 'sweet', url: buildAssetUrl('image/8Stan海外素材.png') },
+    { id: 11, name: 'Stan海外贴纸10', style: 'sweet', url: buildAssetUrl('image/10Stan海外素材.png') },
+    { id: 12, name: 'Stan海外贴纸11', style: 'sweet', url: buildAssetUrl('image/11Stan海外素材.png') },
+    { id: 13, name: 'Stan海外贴纸13', style: 'sweet', url: buildAssetUrl('image/13Stan海外素材.png') },
+    { id: 14, name: 'Stan海外贴纸22', style: 'sweet', url: buildAssetUrl('image/22Stan海外素材.png') },
+    { id: 15, name: 'Stan海外贴纸24', style: 'sweet', url: buildAssetUrl('image/24Stan海外素材.png') },
+    { id: 16, name: 'Stan海外贴纸25', style: 'sweet', url: buildAssetUrl('image/25Stan海外素材.png') },
+    { id: 17, name: 'Stan海外贴纸26', style: 'sweet', url: buildAssetUrl('image/26Stan海外素材.png') },
+    { id: 18, name: 'Stan海外贴纸27', style: 'sweet', url: buildAssetUrl('image/27Stan海外素材.png') },
+    { id: 19, name: 'Stan海外贴纸45', style: 'sweet', url: buildAssetUrl('image/45Stan海外素材.png') },
+    { id: 20, name: 'Stan海外贴纸49', style: 'sweet', url: buildAssetUrl('image/49Stan海外素材.png') },
+    { id: 21, name: 'Stan海外贴纸50', style: 'sweet', url: buildAssetUrl('image/50Stan海外素材.png') },
+    { id: 22, name: 'Stan海外贴纸56', style: 'sweet', url: buildAssetUrl('image/56Stan海外素材.png') },
+    { id: 23, name: 'Stan海外贴纸58', style: 'sweet', url: buildAssetUrl('image/58Stan海外素材.png') },
+    { id: 24, name: 'Stan海外贴纸61', style: 'sweet', url: buildAssetUrl('image/61Stan海外素材.png') },
+    { id: 25, name: '日杂贴纸1', style: 'magazine', url: buildAssetUrl('image/1.png') },
+    { id: 26, name: '日杂贴纸2', style: 'magazine', url: buildAssetUrl('image/2.png') }
 ];
 
 const REMOVE_BG_API_KEY = 'fnxGBUBXD2ekaF6KjQecrdYV';
@@ -837,14 +850,17 @@ function getAssetBatchSize() {
 }
 
 function getPreviewAssetUrl(url) {
-    if (typeof url !== 'string' || !url.startsWith('image/')) {
+    if (typeof url !== 'string') {
         return url;
     }
-    return url.replace(/^image\//, 'image/previews/');
+    if (url.startsWith('image/')) {
+        return url.replace(/^image\//, 'image/previews/');
+    }
+    return url.replace('/image/', '/image/previews/');
 }
 
 function isLocalImageAsset(url) {
-    return typeof url === 'string' && url.startsWith('image/');
+    return typeof url === 'string' && (url.startsWith('image/') || url.includes('/image/'));
 }
 
 function shouldUseLightweightCanvasAssets() {
