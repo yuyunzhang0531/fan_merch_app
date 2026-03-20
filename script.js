@@ -2559,7 +2559,21 @@ async function handleGenerate() {
             headers: { 'X-Api-Key': REMOVE_BG_API_KEY },
             body: formData
         });
-        if (!response.ok) throw new Error('抠图失败');
+        if (!response.ok) {
+            let errorMessage = '抠图失败';
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData?.errors?.[0]?.title || errorData?.errors?.[0]?.detail || errorData?.error || `抠图失败（${response.status}）`;
+            } catch (parseError) {
+                try {
+                    const errorText = await response.text();
+                    errorMessage = errorText || `抠图失败（${response.status}）`;
+                } catch (textError) {
+                    errorMessage = `抠图失败（${response.status}）`;
+                }
+            }
+            throw new Error(errorMessage);
+        }
         const blob = await response.blob();
         const imageData = await blobToDataUrl(blob);
         await addIdolToCanvas(imageData);
