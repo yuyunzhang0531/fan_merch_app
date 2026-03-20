@@ -4,10 +4,6 @@
  */
 
 const API_BASE = window.location.origin;
-const ASSET_BASE = (() => {
-    const configuredBase = String(window.FAN_MERCH_CONFIG?.assetBase || '').trim();
-    return configuredBase ? configuredBase.replace(/\/+$/, '') : '';
-})();
 
 function buildAssetUrl(assetPath) {
     const normalizedPath = String(assetPath || '').trim();
@@ -15,10 +11,7 @@ function buildAssetUrl(assetPath) {
     if (/^(https?:)?\/\//i.test(normalizedPath) || normalizedPath.startsWith('data:') || normalizedPath.startsWith('blob:')) {
         return normalizedPath;
     }
-    if (!ASSET_BASE) {
-        return normalizedPath.replace(/^\/+/, '');
-    }
-    return `${ASSET_BASE}/${normalizedPath.replace(/^\/+/, '')}`;
+    return normalizedPath.replace(/^\/+/, '');
 }
 
 const baseTemplates = [
@@ -86,8 +79,6 @@ const DRAFT_STORAGE_KEY = 'fanMerchCanvasDraft';
 const CUTOUT_LIBRARY_DB_NAME = 'fanMerchLocalAssets';
 const CUTOUT_LIBRARY_STORE = 'cutouts';
 const MAX_LOCAL_CUTOUTS = 12;
-const REMOVE_BG_API_URL = 'https://api.remove.bg/v1.0/removebg';
-const REMOVE_BG_API_KEY = 'EtDYCyrywLMrc6MMc5YERjVV';
 const MAX_REMOVE_BG_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_REMOVE_BG_IMAGE_DIMENSION = 1200;
 const REMOVE_BG_REQUEST_TIMEOUT_MS = 45000;
@@ -602,9 +593,7 @@ function confirmAuthRedirect(actionText = '进行操作') {
 }
 
 function requireEditorLogin(actionText = '进行制作') {
-    if (isUserLoggedIn()) return true;
-    confirmAuthRedirect(actionText);
-    return false;
+    return true;
 }
 
 function updateCropModeUI() {
@@ -2328,26 +2317,24 @@ async function handleDownloadClick(event) {
         event.stopPropagation();
     }
     if (downloadInProgress) return;
-    if (!requireEditorLogin('下载作品')) return;
-    if (getCurrentCredits() <= 0) {
-        openRechargeModal(currentUser.email ? '当前积分为 0，充值后才能下载作品。' : '请先登录并充值积分后再下载作品。');
-        return;
-    }
 
     downloadInProgress = true;
     updateDownloadButtonState(true);
 
     try {
-        saveCanvasRecoveryState();
         const generatedImage = await performCanvasDownload();
-        window.setTimeout(() => {
-            finalizeDownloadAfterExport(generatedImage);
-        }, 0);
+        if (isUserLoggedIn()) {
+            await saveGeneratedToLibrary(generatedImage);
+            await appendUserHistory('下载并保存作品到生成图库');
+        }
+        clearCanvasRecoveryState();
+        downloadInProgress = false;
+        updateDownloadButtonState(false);
     } catch (error) {
         downloadInProgress = false;
         updateDownloadButtonState(false);
         clearCanvasRecoveryState();
-        openRechargeModal(error.message || '积分不足，请先充值');
+        alert(error.message || '下载失败，请重试');
     }
 }
 
@@ -2495,14 +2482,9 @@ function setupUpload() {
     const generateBtn = document.getElementById('generate-btn');
 
     area.onclick = () => {
-        if (!requireEditorLogin('上传照片')) return;
         input.click();
     };
     input.onchange = async (event) => {
-        if (!requireEditorLogin('上传照片')) {
-            input.value = '';
-            return;
-        }
         const file = event.target.files[0];
         if (!file) return;
 
@@ -2806,7 +2788,6 @@ function setupMobileWorkspace() {
 }
 
 async function handleGenerate() {
-    if (!requireEditorLogin('开始制作')) return;
     if (!pendingFile) {
         alert('请先上传照片');
         return;
@@ -2833,11 +2814,8 @@ async function handleGenerate() {
 
         let response;
         try {
-            response = await fetch(REMOVE_BG_API_URL, {
+            response = await fetch(`${API_BASE}/api/remove-bg`, {
                 method: 'POST',
-                headers: {
-                    'X-Api-Key': REMOVE_BG_API_KEY
-                },
                 body: formData,
                 signal: abortController.signal
             });

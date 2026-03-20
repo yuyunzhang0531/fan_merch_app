@@ -478,7 +478,7 @@ app.post('/api/user/checkin-status', authRequired, handleUserCheckInStatus);
 app.get('/api/user/check-in-status', authRequired, handleUserCheckInStatus);
 app.get('/api/user/checkin-status', authRequired, handleUserCheckInStatus);
 
-app.post('/api/remove-bg', authRequired, (req, res) => {
+app.post('/api/remove-bg', (req, res) => {
   upload.single('image_file')(req, res, async (uploadError) => {
     if (uploadError) {
       const message = uploadError.code === 'LIMIT_FILE_SIZE'
@@ -503,7 +503,7 @@ app.post('/api/remove-bg', authRequired, (req, res) => {
       const mimeType = String(req.file.mimetype || 'image/png');
       const fileName = String(req.file.originalname || 'upload.png');
       formData.append('image_file', new Blob([req.file.buffer], { type: mimeType }), fileName);
-      formData.append('size', 'preview');
+      formData.append('size', 'auto');
 
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => {
