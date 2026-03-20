@@ -1111,6 +1111,15 @@ function blobToDataUrl(blob) {
     });
 }
 
+async function readApiErrorMessage(response, fallbackMessage) {
+    try {
+        const data = await response.json();
+        return data?.error || fallbackMessage;
+    } catch (error) {
+        return fallbackMessage;
+    }
+}
+
 function loadImageElement(src) {
     return new Promise((resolve, reject) => {
         const image = new Image();
@@ -2804,11 +2813,26 @@ async function handleGenerate() {
     const loading = document.getElementById('loading-status');
     const generateBtn = document.getElementById('generate-btn');
     loading.style.display = 'block';
-    loading.innerText = '⏳ 正在本地抠图，请稍候...';
+    loading.innerText = '⏳ 正在通过 remove.bg（preview 模式）抠图，请稍候...';
     generateBtn.disabled = true;
 
     try {
-        const { imageData, preparedFile } = await removeBackgroundInBrowser(pendingFile);
+        const preparedFile = await optimizeUploadImage(pendingFile);
+        const formData = new FormData();
+        formData.append('image_file', preparedFile);
+
+        const response = await fetch(`${API_BASE}/api/remove-bg`, {
+            method: 'POST',
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(await readApiErrorMessage(response, `抠图失败（${response.status}）`));
+        }
+
+        const imageBlob = await response.blob();
+        const imageData = await blobToDataUrl(imageBlob);
         pendingFile = preparedFile;
         await addIdolToCanvas(imageData);
         try {
@@ -2817,10 +2841,10 @@ async function handleGenerate() {
             alert(libraryError.message || '抠图已完成，但保存到本地人物库失败');
         }
     } catch (error) {
-        alert(error.message || '本地抠图失败');
+        alert(error.message || '抠图失败');
     } finally {
         loading.style.display = 'none';
-        loading.innerText = '⏳ AI 正在智能抠图，请稍候...';
+        loading.innerText = '⏳ 正在通过 remove.bg（preview 模式）抠图，请稍候...';
         generateBtn.disabled = false;
     }
 }

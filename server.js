@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_KEY = process.env.ADMIN_KEY || 'fan-merch-admin';
 const REMOVE_BG_API_URL = 'https://api.remove.bg/v1.0/removebg';
-const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY || 'GBL88ZG76BJBKp4VF52VQtvq';
+const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY || 'EtDYCyrywLMrc6MMc5YERjVV';
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, 'data');
@@ -169,10 +169,17 @@ async function readRemoveBgError(response) {
   }
 }
 
+function maskApiKey(apiKey) {
+  const normalized = String(apiKey || '').trim();
+  if (!normalized) return 'empty';
+  if (normalized.length <= 10) return `${normalized.slice(0, 2)}***${normalized.slice(-2)}`;
+  return `${normalized.slice(0, 6)}***${normalized.slice(-4)}`;
+}
+
 function formatRemoveBgError(status, message) {
   const normalizedMessage = String(message || '').trim();
   if (status === 402) {
-    return 'remove.bg API 额度不足，当前已改为 preview 模式；请检查该 API key 是否有可用 API credits。';
+    return 'remove.bg preview 次数或 API credits 不足。你当前走的是 preview 模式，请检查这个 key 是否还有可用 preview/API 次数。';
   }
   if (status === 401 || status === 403) {
     return 'remove.bg API key 无效或没有调用权限，请检查后端环境变量 REMOVE_BG_API_KEY。';
@@ -507,6 +514,14 @@ app.post('/api/remove-bg', authRequired, (req, res) => {
 
       if (!response.ok) {
         const upstreamMessage = await readRemoveBgError(response);
+        console.error('[remove-bg] upstream request failed', {
+          status: response.status,
+          key: maskApiKey(REMOVE_BG_API_KEY),
+          mimeType,
+          fileName,
+          fileSize: req.file.size,
+          message: upstreamMessage || '(empty)'
+        });
         res.status(response.status).json({ error: formatRemoveBgError(response.status, upstreamMessage) });
         return;
       }
@@ -516,6 +531,12 @@ app.post('/api/remove-bg', authRequired, (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       res.send(outputBuffer);
     } catch (error) {
+      console.error('[remove-bg] proxy request crashed', {
+        key: maskApiKey(REMOVE_BG_API_KEY),
+        fileName: req.file?.originalname || '',
+        fileSize: req.file?.size || 0,
+        message: error.message || 'unknown error'
+      });
       res.status(500).json({ error: error.message || '抠图服务暂时不可用' });
     }
   });
