@@ -111,6 +111,7 @@ let draftSaveTimer = null;
 let suppressDraftSave = false;
 let cutoutDbPromise = null;
 let responsiveCanvasFrame = 0;
+let assetAutoLoadFrame = 0;
 let stickerCutoutState = {
     sourceUrl: '',
     sourceName: '',
@@ -842,6 +843,54 @@ function getPreviewAssetUrl(url) {
     return url.replace(/^image\//, 'image/previews/');
 }
 
+function isLocalImageAsset(url) {
+    return typeof url === 'string' && url.startsWith('image/');
+}
+
+function shouldUseLightweightCanvasAssets() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function getCanvasAssetSources(url) {
+    const originalSrc = url;
+    const previewSrc = isLocalImageAsset(url) ? getPreviewAssetUrl(url) : '';
+    const displaySrc = shouldUseLightweightCanvasAssets() && previewSrc ? previewSrc : originalSrc;
+    return {
+        originalSrc,
+        previewSrc,
+        displaySrc
+    };
+}
+
+function loadImageElementWithFallback(primarySrc, fallbackSrc = '') {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+
+        image.onload = () => resolve(image);
+        image.onerror = () => {
+            if (fallbackSrc && primarySrc !== fallbackSrc) {
+                image.src = fallbackSrc;
+                return;
+            }
+            reject(new Error('图片加载失败'));
+        };
+
+        image.src = primarySrc;
+    });
+}
+
+function buildExportCanvasJson() {
+    const canvasJson = canvas.toJSON(['objectRole', 'id', 'isCropPreview', 'originalSrc', 'previewSrc']);
+    canvasJson.objects = (canvasJson.objects || []).filter((obj) => !obj.isCropPreview).map((obj) => {
+        if (obj && obj.type === 'image' && obj.originalSrc) {
+            return { ...obj, src: obj.originalSrc };
+        }
+        return obj;
+    });
+    return canvasJson;
+}
+
 function shouldRenderTemplateAssets() {
     const templateDrawer = document.querySelector('.template-drawer');
     if (!window.matchMedia('(max-width: 768px)').matches) {
@@ -903,6 +952,51 @@ function updateAssetLoadMoreButton(buttonId, visibleCount, totalCount, label) {
     button.hidden = !hasMore;
     button.style.display = hasMore ? 'block' : 'none';
     button.innerText = hasMore ? `${label}（剩余 ${totalCount - visibleCount}）` : label;
+}
+
+function updateAssetLoadStatus(statusId, visibleCount, totalCount, noun) {
+    const status = document.getElementById(statusId);
+    if (!status) return;
+    if (!totalCount) {
+        status.innerText = '';
+        return;
+    }
+    status.innerText = `已显示 ${Math.min(visibleCount, totalCount)} / ${totalCount} 个${noun}`;
+}
+
+function autoLoadMoreAssetsIfNeeded() {
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
+
+    const tryAdvance = (buttonId, increment) => {
+        const button = document.getElementById(buttonId);
+        if (!button || button.hidden || button.style.display === 'none') return false;
+        const rect = button.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (rect.top > viewportHeight + 120) return false;
+        increment();
+        return true;
+    };
+
+    if (tryAdvance('template-load-more-btn', () => {
+        visibleTemplateCount += getAssetBatchSize();
+    })) {
+        renderUI();
+        return;
+    }
+
+    if (tryAdvance('sticker-load-more-btn', () => {
+        visibleStickerCount += getAssetBatchSize();
+    })) {
+        renderUI();
+    }
+}
+
+function scheduleAutoLoadMoreAssets() {
+    if (assetAutoLoadFrame) return;
+    assetAutoLoadFrame = window.requestAnimationFrame(() => {
+        assetAutoLoadFrame = 0;
+        autoLoadMoreAssetsIfNeeded();
+    });
 }
 
 function blobToDataUrl(blob) {
@@ -1145,7 +1239,7 @@ function setupCutoutLibraryEvents() {
 
 function buildCanvasRecoveryState() {
     if (!canvas) return null;
-    const canvasJson = canvas.toJSON(['objectRole', 'id', 'isCropPreview']);
+    const canvasJson = canvas.toJSON(['objectRole', 'id', 'isCropPreview', 'originalSrc', 'previewSrc']);
     canvasJson.objects = (canvasJson.objects || []).filter((obj) => !obj.isCropPreview);
 
     return {
@@ -1704,8 +1798,8 @@ function loadTemplate(url, name = '') {
 
     const currentToken = ++templateLoadToken;
     const previousTemplate = templateImage;
-    const image = new Image();
-    image.onload = () => {
+    const assetSources = getCanvasAssetSources(url);
+    loadImageElementWithFallback(assetSources.displaySrc, assetSources.originalSrc).then((image) => {
         if (currentToken !== templateLoadToken) return;
         try {
             const nextTemplate = new fabric.Image(image, {
@@ -1717,7 +1811,9 @@ function loadTemplate(url, name = '') {
                 cornerSize: 12,
                 visible: true,
                 opacity: 1,
-                objectCaching: false
+                objectCaching: false,
+                originalSrc: assetSources.originalSrc,
+                previewSrc: assetSources.previewSrc
             });
 
             fitImageIntoCanvas(nextTemplate);
@@ -1766,36 +1862,41 @@ function loadTemplate(url, name = '') {
             canvas.renderAll();
             alert('模板加载失败，请重试');
         }
-    };
-    image.onerror = () => {
+    }).catch(() => {
         if (currentToken !== templateLoadToken) return;
         alert('模板图片加载失败，请检查素材路径');
-    };
-    image.src = url;
+    });
 }
 
 function addStickerToCanvas(url, name = '') {
     if (!requireEditorLogin('添加贴纸')) return;
-    fabric.Image.fromURL(url, (img) => {
-        img.set({
-            left: CANVAS_WIDTH / 2,
-            top: CANVAS_HEIGHT / 2,
-            originX: 'center',
-            originY: 'center',
-            borderColor: '#82d3ff',
-            selectable: true,
-            evented: true,
-            cornerColor: '#82d3ff',
-            cornerSize: 12
+    const assetSources = getCanvasAssetSources(url);
+    loadImageElementWithFallback(assetSources.displaySrc, assetSources.originalSrc)
+        .then((image) => {
+            const img = new fabric.Image(image, {
+                left: CANVAS_WIDTH / 2,
+                top: CANVAS_HEIGHT / 2,
+                originX: 'center',
+                originY: 'center',
+                borderColor: '#82d3ff',
+                selectable: true,
+                evented: true,
+                cornerColor: '#82d3ff',
+                cornerSize: 12,
+                originalSrc: assetSources.originalSrc,
+                previewSrc: assetSources.previewSrc
+            });
+            img.scaleToWidth(160);
+            canvas.add(img);
+            img.bringToFront();
+            canvas.setActiveObject(img);
+            canvas.renderAll();
+            applyEditorPermission();
+            scheduleDraftSave();
+        })
+        .catch(() => {
+            alert('贴纸素材加载失败，请检查素材路径');
         });
-        img.scaleToWidth(160);
-        canvas.add(img);
-        img.bringToFront();
-        canvas.setActiveObject(img);
-        canvas.renderAll();
-        applyEditorPermission();
-        scheduleDraftSave();
-    }, { crossOrigin: 'anonymous' });
 }
 
 function exportCanvasSnapshot() {
@@ -1810,7 +1911,7 @@ function exportCanvasSnapshot() {
             backgroundColor: canvas.backgroundColor || '#ffffff'
         });
 
-        exportCanvas.loadFromJSON(canvas.toJSON(), () => {
+        exportCanvas.loadFromJSON(buildExportCanvasJson(), () => {
             try {
                 exportCanvas.renderAll();
                 const dataUrl = exportCanvas.toDataURL({ format: 'png' });
@@ -1950,7 +2051,9 @@ function duplicateActiveObject() {
             left: Number(obj.left || 0) + 24,
             top: Number(obj.top || 0) + 24,
             selectable: true,
-            evented: true
+            evented: true,
+            originalSrc: obj.originalSrc || '',
+            previewSrc: obj.previewSrc || ''
         });
 
         canvas.add(cloned);
@@ -2089,6 +2192,12 @@ function renderUI() {
         shouldRenderTemplates ? filteredTemplates.length : 0,
         '加载更多模板'
     );
+    updateAssetLoadStatus(
+        'template-load-status',
+        shouldRenderTemplates ? Math.min(visibleTemplateCount, filteredTemplates.length) : 0,
+        shouldRenderTemplates ? filteredTemplates.length : 0,
+        '模板'
+    );
 
     const filteredStickers = stickerTemplates.filter((item) => {
         return currentStickerStyle === 'all' || item.style === currentStickerStyle;
@@ -2109,6 +2218,14 @@ function renderUI() {
         });
     }
     updateAssetLoadMoreButton('sticker-load-more-btn', shouldRenderStickers ? Math.min(visibleStickerCount, filteredStickers.length) : 0, shouldRenderStickers ? filteredStickers.length : 0, '加载更多贴纸');
+    updateAssetLoadStatus(
+        'sticker-load-status',
+        shouldRenderStickers ? Math.min(visibleStickerCount, filteredStickers.length) : 0,
+        shouldRenderStickers ? filteredStickers.length : 0,
+        '贴纸'
+    );
+
+    scheduleAutoLoadMoreAssets();
 }
 
 function setupFilterEvents() {
@@ -2178,6 +2295,8 @@ function setupFilterEvents() {
         }
         renderUI();
     });
+
+    window.addEventListener('scroll', scheduleAutoLoadMoreAssets, { passive: true });
 }
 
 function setupMobileWorkspace() {
