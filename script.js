@@ -1114,9 +1114,20 @@ function blobToDataUrl(blob) {
 function loadImageElement(src) {
     return new Promise((resolve, reject) => {
         const image = new Image();
-        image.onload = () => resolve(image);
-        image.onerror = () => reject(new Error('图片解析失败，请换一张 JPG 或 PNG 再试'));
-        image.src = src;
+        const objectUrl = src instanceof Blob ? URL.createObjectURL(src) : '';
+        image.onload = () => {
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+            }
+            resolve(image);
+        };
+        image.onerror = () => {
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+            }
+            reject(new Error('图片解析失败，请换一张 JPG 或 PNG 再试'));
+        };
+        image.src = objectUrl || src;
     });
 }
 
@@ -1138,28 +1149,55 @@ function isHeicLikeFile(file) {
     return mimeType.includes('heic') || mimeType.includes('heif') || /\.(heic|heif)$/i.test(fileName);
 }
 
-async function optimizeUploadImage(file) {
+function isMobileLikeDevice() {
+    return window.matchMedia('(max-width: 768px)').matches
+        || /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '');
+}
+
+function createUploadLikeFile(blob, originalFileName) {
+    const nextName = String(originalFileName || 'upload').replace(/\.[^.]+$/, '') || 'upload';
+    try {
+        return new File([blob], `${nextName}.jpg`, {
+            type: 'image/jpeg',
+            lastModified: Date.now()
+        });
+    } catch (error) {
+        blob.name = `${nextName}.jpg`;
+        blob.lastModified = Date.now();
+        return blob;
+    }
+}
+
+function getUploadOptimizationLimit(customLimit = {}) {
+    const baseLimit = isMobileLikeDevice()
+        ? { maxBytes: 2 * 1024 * 1024, maxDimension: 1280, quality: 0.82 }
+        : { maxBytes: MAX_REMOVE_BG_UPLOAD_BYTES, maxDimension: MAX_REMOVE_BG_IMAGE_DIMENSION, quality: 0.9 };
+    return { ...baseLimit, ...customLimit };
+}
+
+async function optimizeUploadImage(file, customLimit = null) {
     if (!file) return null;
+
+    const optimizationLimit = getUploadOptimizationLimit(customLimit || undefined);
 
     if (isHeicLikeFile(file)) {
         throw new Error('手机照片当前是 HEIC/HEIF 格式，网页端抠图不稳定。请先转换成 JPG/PNG，或把手机相机格式改成“兼容性最佳”后再试。');
     }
 
     const mimeType = String(file.type || '').toLowerCase();
-    const canUseOriginal = ['image/jpeg', 'image/png', 'image/webp'].includes(mimeType) && file.size <= MAX_REMOVE_BG_UPLOAD_BYTES;
+    const canUseOriginal = ['image/jpeg', 'image/png', 'image/webp'].includes(mimeType) && file.size <= optimizationLimit.maxBytes;
     if (canUseOriginal) {
         return file;
     }
 
-    const imageSrc = await blobToDataUrl(file);
-    const image = await loadImageElement(imageSrc);
+    const image = await loadImageElement(file);
     const width = Number(image.naturalWidth || image.width || 0);
     const height = Number(image.naturalHeight || image.height || 0);
     if (!width || !height) {
         throw new Error('图片尺寸读取失败，请换一张 JPG 或 PNG 再试');
     }
 
-    const scale = Math.min(1, MAX_REMOVE_BG_IMAGE_DIMENSION / Math.max(width, height));
+    const scale = Math.min(1, optimizationLimit.maxDimension / Math.max(width, height));
     const targetWidth = Math.max(1, Math.round(width * scale));
     const targetHeight = Math.max(1, Math.round(height * scale));
     const canvasElement = document.createElement('canvas');
@@ -1171,12 +1209,8 @@ async function optimizeUploadImage(file) {
     }
 
     ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
-    const outputBlob = await canvasToBlob(canvasElement, 'image/jpeg', 0.9);
-    const nextName = String(file.name || 'upload').replace(/\.[^.]+$/, '') || 'upload';
-    return new File([outputBlob], `${nextName}.jpg`, {
-        type: 'image/jpeg',
-        lastModified: Date.now()
-    });
+    const outputBlob = await canvasToBlob(canvasElement, 'image/jpeg', optimizationLimit.quality);
+    return createUploadLikeFile(outputBlob, file.name);
 }
 
 async function getFrontEndSegmentationModel() {
@@ -1197,7 +1231,7 @@ async function getFrontEndSegmentationModel() {
                 return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
             }
         });
-        model.setOptions({ modelSelection: 1 });
+        model.setOptions({ modelSelection: isMobileLikeDevice() ? 0 : 1 });
         selfieSegmentationInstance = model;
         return model;
     })();
@@ -1277,13 +1311,31 @@ function buildCutoutFromSegmentation(image, segmentationMask) {
 
 async function removeBackgroundInBrowser(file) {
     const preparedFile = await optimizeUploadImage(file);
-    const imageSrc = await blobToDataUrl(preparedFile);
-    const image = await loadImageElement(imageSrc);
-    const results = await runFrontEndSegmentation(image);
-    return {
-        imageData: buildCutoutFromSegmentation(image, results.segmentationMask),
-        preparedFile
-    };
+
+    try {
+        const image = await loadImageElement(preparedFile);
+        const results = await runFrontEndSegmentation(image);
+        return {
+            imageData: buildCutoutFromSegmentation(image, results.segmentationMask),
+            preparedFile
+        };
+    } catch (primaryError) {
+        if (!isMobileLikeDevice()) {
+            throw primaryError;
+        }
+
+        const retryFile = await optimizeUploadImage(preparedFile, {
+            maxBytes: 1024 * 1024,
+            maxDimension: 960,
+            quality: 0.75
+        });
+        const retryImage = await loadImageElement(retryFile || preparedFile);
+        const retryResults = await runFrontEndSegmentation(retryImage);
+        return {
+            imageData: buildCutoutFromSegmentation(retryImage, retryResults.segmentationMask),
+            preparedFile: retryFile || preparedFile
+        };
+    }
 }
 
 function getCutoutLibraryDb() {
@@ -1412,7 +1464,6 @@ function addIdolToCanvas(imageSrc) {
                 return;
             }
 
-            if (idolObj) canvas.remove(idolObj);
             img.set({
                 left: CANVAS_WIDTH / 2,
                 top: CANVAS_HEIGHT / 2,
@@ -2341,9 +2392,7 @@ function duplicateActiveObject() {
             }
         }
 
-        // 复制AI人物时，更新idolObj为最新复制件，便于后续裁剪
-        if (obj === idolObj) {
-            obj.objectRole = '';
+        if (obj.objectRole === 'idol') {
             cloned.objectRole = 'idol';
             idolObj = cloned;
         }
@@ -2399,8 +2448,14 @@ function setupLayerControls() {
         if (!requireEditorLogin('删除对象')) return;
         const obj = canvas.getActiveObject();
         if (!obj || obj === templateImage) return;
-        if (obj === idolObj) idolObj = null;
+        if (obj === idolObj) {
+            idolObj = null;
+        }
         canvas.remove(obj);
+        if (!idolObj) {
+            const remainingIdol = canvas.getObjects().slice().reverse().find((item) => item.objectRole === 'idol');
+            idolObj = remainingIdol || null;
+        }
         canvas.discardActiveObject();
         canvas.renderAll();
         syncTextToolState();
@@ -2824,10 +2879,12 @@ function toggleCropMode() {
             alert('只能裁剪图像对象');
             return;
         }
-        if (!idolObj || selectedObj !== idolObj) {
+        if (selectedObj.objectRole !== 'idol') {
             alert('当前仅支持裁剪 AI 抠图后的人物对象，请先选中人物');
             return;
         }
+
+        idolObj = selectedObj;
 
         cropMode = true;
         pendingCropRect = null;
