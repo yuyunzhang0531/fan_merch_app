@@ -1421,6 +1421,12 @@ header p {
     color: #4d3a60;
 }
 
+.asset-load-more-btn {
+    width: 100%;
+    margin-top: 12px;
+    min-height: 44px;
+}
+
 .upload-area,
 .cutout-library-panel,
 .text-tool-panel,
@@ -3387,3 +3393,8 @@ header p {
         font-size: 13px;
     }
 }
+
+
+    .asset-load-more-btn {
+        margin-top: 10px;
+    }
