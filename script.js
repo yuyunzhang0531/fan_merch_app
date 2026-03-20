@@ -79,7 +79,7 @@ const stickerTemplates = [
     { id: 26, name: '日杂贴纸2', style: 'magazine', url: buildAssetUrl('image/2.png') }
 ];
 
-const REMOVE_BG_API_KEY = 'fnxGBUBXD2ekaF6KjQecrdYV';
+const REMOVE_BG_API_KEY = 'GBL88ZG76BJBKp4VF52VQtvq';
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 800;
 const DOWNLOAD_RECOVERY_KEY = 'fanMerchDownloadRecovery';
