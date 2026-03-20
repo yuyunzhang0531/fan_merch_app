@@ -3,10 +3,7 @@
  * 制图页：包含独立账号入口、积分下载和充值弹窗
  */
 
-const API_BASE = (() => {
-    const configuredBase = String(window.FAN_MERCH_CONFIG?.apiBase || '').trim();
-    return configuredBase ? configuredBase.replace(/\/+$/, '') : window.location.origin;
-})();
+const API_BASE = window.location.origin;
 const IMAGE_CDN_BASE = 'https://cdn.jsdelivr.net/gh/yuyunzhang0531/fan_merch_app/';
 
 function buildAssetUrl(assetPath) {

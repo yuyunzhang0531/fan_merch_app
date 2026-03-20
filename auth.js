@@ -1,7 +1,4 @@
-const API_BASE = (() => {
-    const configuredBase = String(window.FAN_MERCH_CONFIG?.apiBase || '').trim();
-    return configuredBase ? configuredBase.replace(/\/+$/, '') : window.location.origin;
-})();
+const API_BASE = window.location.origin;
 
 let authToken = localStorage.getItem('fanMerchToken') || '';
 let currentUser = localStorage.getItem('fanMerchEmail') || '';
@@ -53,8 +50,28 @@ function setAuthMessage(message) {
     if (el) el.innerText = message;
 }
 
+function getAuthReturnTo() {
+    try {
+        return sessionStorage.getItem('fanMerchAuthReturnTo') || 'index.html';
+    } catch (error) {
+        return 'index.html';
+    }
+}
+
+function consumeAuthMessage() {
+    try {
+        const message = sessionStorage.getItem('fanMerchAuthMessage') || '';
+        if (message) {
+            sessionStorage.removeItem('fanMerchAuthMessage');
+        }
+        return message;
+    } catch (error) {
+        return '';
+    }
+}
+
 function goBackToEditor() {
-    window.location.href = 'index.html';
+    window.location.href = getAuthReturnTo();
 }
 
 async function loadUserData() {
@@ -215,8 +232,13 @@ function initAuthPage() {
     const checkInBtn = document.getElementById('check-in-btn');
     const email = document.getElementById('auth-email');
     const password = document.getElementById('auth-password');
+    const pendingMessage = consumeAuthMessage();
 
     setupGalleryEvents();
+
+    if (pendingMessage) {
+        setAuthMessage(pendingMessage);
+    }
 
     if (backHomeBtn) {
         backHomeBtn.onclick = goBackToEditor;
