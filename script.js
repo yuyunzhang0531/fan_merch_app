@@ -3,7 +3,10 @@
  * 制图页：包含独立账号入口、积分下载和充值弹窗
  */
 
-const API_BASE = window.location.origin;
+const APP_CONFIG = window.FAN_MERCH_CONFIG || {};
+const API_BASE = String(APP_CONFIG.apiBase || window.location.origin || '').replace(/\/+$/, '');
+const SERVER_WAKEUP_HINT_DELAY_MS = 5000;
+const SERVER_WAKEUP_HINT_MESSAGE = '服务器正在启动，首次运行可能需要 50 秒，请勿关闭页面...';
 
 function buildAssetUrl(assetPath) {
     const normalizedPath = String(assetPath || '').trim();
@@ -1112,6 +1115,19 @@ async function readApiErrorMessage(response, fallbackMessage) {
     }
 }
 
+function startServerWakeupHintTimer() {
+    let cancelled = false;
+    const timerId = window.setTimeout(() => {
+        if (cancelled) return;
+        alert(SERVER_WAKEUP_HINT_MESSAGE);
+    }, SERVER_WAKEUP_HINT_DELAY_MS);
+
+    return () => {
+        cancelled = true;
+        window.clearTimeout(timerId);
+    };
+}
+
 function loadImageElement(src) {
     return new Promise((resolve, reject) => {
         const image = new Image();
@@ -1170,9 +1186,7 @@ function createUploadLikeFile(blob, originalFileName) {
 }
 
 function getUploadOptimizationLimit(customLimit = {}) {
-    const baseLimit = isMobileLikeDevice()
-        ? { maxBytes: 2 * 1024 * 1024, maxDimension: 1200, quality: 0.8 }
-        : { maxBytes: MAX_REMOVE_BG_UPLOAD_BYTES, maxDimension: MAX_REMOVE_BG_IMAGE_DIMENSION, quality: 0.8 };
+    const baseLimit = { maxBytes: 2 * 1024 * 1024, maxDimension: 1200, quality: 0.8 };
     return { ...baseLimit, ...customLimit };
 }
 
@@ -1190,14 +1204,6 @@ async function optimizeUploadImage(file, customLimit = null) {
     const height = Number(image.naturalHeight || image.height || 0);
     if (!width || !height) {
         throw new Error('图片尺寸读取失败，请换一张 JPG 或 PNG 再试');
-    }
-
-    const mimeType = String(file.type || '').toLowerCase();
-    const canUseOriginal = ['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)
-        && file.size <= optimizationLimit.maxBytes
-        && Math.max(width, height) <= optimizationLimit.maxDimension;
-    if (canUseOriginal) {
-        return file;
     }
 
     const scale = Math.min(1, optimizationLimit.maxDimension / Math.max(width, height));
@@ -2278,47 +2284,67 @@ function dataUrlToBlob(dataUrl) {
     return new Blob([bytes], { type: mimeType });
 }
 
-function triggerImageDownload(dataUrl, filename = 'star-design.png') {
-    const blob = dataUrlToBlob(dataUrl);
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = filename;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+function ensureDownloadPreviewModal() {
+    let modal = document.getElementById('download-preview-modal');
+    if (modal) {
+        return modal;
+    }
 
-    setTimeout(() => {
-        URL.revokeObjectURL(objectUrl);
-    }, 1000);
+    modal = document.createElement('div');
+    modal.id = 'download-preview-modal';
+    modal.className = 'modal-overlay';
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+        <div class="gallery-preview-card">
+            <button id="download-preview-close" type="button" class="recharge-close-btn">×</button>
+            <h3 style="color:#4d2470; margin-bottom:12px;">作品 PNG 预览</h3>
+            <img id="download-preview-image" alt="导出作品 PNG 预览">
+            <p style="margin-top:12px; text-align:center; color:#6a5b83; font-size:13px;">微信用户请长按上方图片保存到相册</p>
+            <div class="button-group" style="margin-top:14px;">
+                <button id="download-preview-open" type="button" class="btn btn-secondary">打开 PNG 图片</button>
+                <button id="download-preview-confirm" type="button" class="btn btn-primary">我知道了</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const closeModal = () => {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+    };
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+
+    modal.querySelector('#download-preview-close')?.addEventListener('click', closeModal);
+    modal.querySelector('#download-preview-confirm')?.addEventListener('click', closeModal);
+
+    return modal;
+}
+
+function openDownloadPreviewModal(dataUrl) {
+    const modal = ensureDownloadPreviewModal();
+    const image = modal.querySelector('#download-preview-image');
+    const openBtn = modal.querySelector('#download-preview-open');
+    if (!image || !openBtn) return;
+
+    image.src = dataUrl;
+    openBtn.onclick = () => {
+        const newWindow = window.open(dataUrl, '_blank', 'noopener,noreferrer');
+        if (!newWindow) {
+            alert('当前浏览器拦截了新窗口，请长按图片保存。');
+        }
+    };
+
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
 }
 
 async function performCanvasDownload() {
-    const dataUrl = await exportCanvasSnapshot();
-    triggerImageDownload(dataUrl);
-    return dataUrl;
-}
-
-async function finalizeDownloadAfterExport(generatedImage) {
-    try {
-        const data = await apiRequest('/api/user/deduct-credit', {
-            method: 'POST',
-            body: JSON.stringify({ reason: 'download' })
-        });
-        currentUser.credits = Number(data.credits || 0);
-        persistCurrentUser();
-        updateAuthEntryUI();
-        await saveGeneratedToLibrary(generatedImage);
-        await appendUserHistory('下载并保存作品到生成图库');
-        clearCanvasRecoveryState();
-    } catch (error) {
-        await syncCurrentUserState();
-        alert(error.message || '作品已下载，但积分或图库保存失败，请稍后重试');
-    } finally {
-        downloadInProgress = false;
-        updateDownloadButtonState(false);
-    }
+    return exportCanvasSnapshot();
 }
 
 async function handleDownloadClick(event) {
@@ -2330,21 +2356,19 @@ async function handleDownloadClick(event) {
 
     downloadInProgress = true;
     updateDownloadButtonState(true);
+    const stopWakeupHint = startServerWakeupHintTimer();
 
     try {
         const generatedImage = await performCanvasDownload();
-        if (isUserLoggedIn()) {
-            await saveGeneratedToLibrary(generatedImage);
-            await appendUserHistory('下载并保存作品到生成图库');
-        }
+        openDownloadPreviewModal(generatedImage);
         clearCanvasRecoveryState();
-        downloadInProgress = false;
-        updateDownloadButtonState(false);
     } catch (error) {
-        downloadInProgress = false;
-        updateDownloadButtonState(false);
         clearCanvasRecoveryState();
         alert(error.message || '下载失败，请重试');
+    } finally {
+        stopWakeupHint();
+        downloadInProgress = false;
+        updateDownloadButtonState(false);
     }
 }
 
@@ -2808,12 +2832,12 @@ async function handleGenerate() {
     loading.style.display = 'block';
     loading.innerText = '⏳ 图片压缩中...';
     generateBtn.disabled = true;
+    const stopWakeupHint = startServerWakeupHintTimer();
 
     try {
         const preparedFile = await optimizeUploadImage(pendingFile);
         const formData = new FormData();
         formData.append('image_file', preparedFile);
-        formData.append('size', 'auto');
 
         loading.innerText = '⏳ AI 抠图进行中...';
 
@@ -2848,11 +2872,12 @@ async function handleGenerate() {
         }
     } catch (error) {
         if (error?.name === 'AbortError') {
-            alert('手机端图片上传或 remove.bg 处理超时了。通常是照片分辨率过大导致，现在请换一张更小的照片，或先把原图压缩后再试。');
+            alert('手机端图片上传或 remove.bg 处理超时了。请换一张更小的照片，或先把原图压缩后再试。');
         } else {
             alert(error.message || '抠图失败');
         }
     } finally {
+        stopWakeupHint();
         loading.style.display = 'none';
         loading.innerText = '⏳ AI 抠图进行中...';
         generateBtn.disabled = false;

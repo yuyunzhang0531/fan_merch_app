@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_KEY = process.env.ADMIN_KEY || 'fan-merch-admin';
 const REMOVE_BG_API_URL = 'https://api.remove.bg/v1.0/removebg';
 const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY || 'EtDYCyrywLMrc6MMc5YERjVV';
+const REMOVE_BG_OUTPUT_SIZE = 'auto';
 const REMOVE_BG_UPSTREAM_TIMEOUT_MS = 45000;
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
@@ -503,7 +504,7 @@ app.post('/api/remove-bg', (req, res) => {
       const mimeType = String(req.file.mimetype || 'image/png');
       const fileName = String(req.file.originalname || 'upload.png');
       formData.append('image_file', new Blob([req.file.buffer], { type: mimeType }), fileName);
-      formData.append('size', 'auto');
+      formData.append('size', REMOVE_BG_OUTPUT_SIZE);
 
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => {
