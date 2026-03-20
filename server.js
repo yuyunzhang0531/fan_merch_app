@@ -3,11 +3,14 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const multer = require('multer');
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_KEY = process.env.ADMIN_KEY || 'fan-merch-admin';
+const REMOVE_BG_API_URL = 'https://api.remove.bg/v1.0/removebg';
+const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY || 'GBL88ZG76BJBKp4VF52VQtvq';
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, 'data');
@@ -17,6 +20,19 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 const dbPath = path.join(DATA_DIR, 'fan_merch.db');
 const db = new sqlite3.Database(dbPath);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 12 * 1024 * 1024
+  },
+  fileFilter(req, file, callback) {
+    if (!file || !String(file.mimetype || '').startsWith('image/')) {
+      callback(new Error('仅支持上传图片文件'));
+      return;
+    }
+    callback(null, true);
+  }
+});
 
 const sessions = new Map();
 
@@ -138,6 +154,33 @@ function adminRequired(req, res, next) {
     return res.status(401).json({ error: '管理员密钥无效' });
   }
   next();
+}
+
+async function readRemoveBgError(response) {
+  try {
+    const data = await response.json();
+    return data?.errors?.[0]?.title || data?.errors?.[0]?.detail || data?.error || '';
+  } catch (jsonError) {
+    try {
+      return await response.text();
+    } catch (textError) {
+      return '';
+    }
+  }
+}
+
+function formatRemoveBgError(status, message) {
+  const normalizedMessage = String(message || '').trim();
+  if (status === 402) {
+    return 'remove.bg API 额度不足，当前已改为 preview 模式；请检查该 API key 是否有可用 API credits。';
+  }
+  if (status === 401 || status === 403) {
+    return 'remove.bg API key 无效或没有调用权限，请检查后端环境变量 REMOVE_BG_API_KEY。';
+  }
+  if (status === 413) {
+    return '上传图片过大，请换一张更小的图片后再试。';
+  }
+  return normalizedMessage || `抠图失败（${status}）`;
 }
 
 app.use(cors());
@@ -426,6 +469,57 @@ app.post('/api/user/check-in-status', authRequired, handleUserCheckInStatus);
 app.post('/api/user/checkin-status', authRequired, handleUserCheckInStatus);
 app.get('/api/user/check-in-status', authRequired, handleUserCheckInStatus);
 app.get('/api/user/checkin-status', authRequired, handleUserCheckInStatus);
+
+app.post('/api/remove-bg', authRequired, (req, res) => {
+  upload.single('image_file')(req, res, async (uploadError) => {
+    if (uploadError) {
+      const message = uploadError.code === 'LIMIT_FILE_SIZE'
+        ? '上传图片不能超过 12MB'
+        : (uploadError.message || '上传图片失败');
+      res.status(400).json({ error: message });
+      return;
+    }
+
+    if (!REMOVE_BG_API_KEY) {
+      res.status(500).json({ error: '后端未配置 remove.bg API key' });
+      return;
+    }
+
+    if (!req.file?.buffer) {
+      res.status(400).json({ error: '请先上传一张图片' });
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      const mimeType = String(req.file.mimetype || 'image/png');
+      const fileName = String(req.file.originalname || 'upload.png');
+      formData.append('image_file', new Blob([req.file.buffer], { type: mimeType }), fileName);
+      formData.append('size', 'preview');
+
+      const response = await fetch(REMOVE_BG_API_URL, {
+        method: 'POST',
+        headers: {
+          'X-Api-Key': REMOVE_BG_API_KEY
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const upstreamMessage = await readRemoveBgError(response);
+        res.status(response.status).json({ error: formatRemoveBgError(response.status, upstreamMessage) });
+        return;
+      }
+
+      const outputBuffer = Buffer.from(await response.arrayBuffer());
+      res.setHeader('Content-Type', response.headers.get('content-type') || 'image/png');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(outputBuffer);
+    } catch (error) {
+      res.status(500).json({ error: error.message || '抠图服务暂时不可用' });
+    }
+  });
+});
 
 app.use(express.static(__dirname, {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,

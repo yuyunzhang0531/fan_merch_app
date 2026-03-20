@@ -79,7 +79,6 @@ const stickerTemplates = [
     { id: 26, name: '日杂贴纸2', style: 'magazine', url: buildAssetUrl('image/2.png') }
 ];
 
-const REMOVE_BG_API_KEY = 'GBL88ZG76BJBKp4VF52VQtvq';
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 800;
 const DOWNLOAD_RECOVERY_KEY = 'fanMerchDownloadRecovery';
@@ -2554,9 +2553,13 @@ async function handleGenerate() {
     try {
         const formData = new FormData();
         formData.append('image_file', pendingFile);
-        const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+        const headers = {};
+        if (authToken) {
+            headers.Authorization = `Bearer ${authToken}`;
+        }
+        const response = await fetch(`${API_BASE}/api/remove-bg`, {
             method: 'POST',
-            headers: { 'X-Api-Key': REMOVE_BG_API_KEY },
+            headers,
             body: formData
         });
         if (!response.ok) {
