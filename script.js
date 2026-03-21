@@ -17,6 +17,19 @@ function buildAssetUrl(assetPath) {
     return normalizedPath.replace(/^\/+/, '');
 }
 
+function normalizeAssetRequestUrl(assetPath) {
+    const normalizedPath = String(assetPath || '').trim();
+    if (!normalizedPath) return '';
+    if (normalizedPath.startsWith('data:') || normalizedPath.startsWith('blob:')) {
+        return normalizedPath;
+    }
+    try {
+        return new URL(normalizedPath, window.location.href).href;
+    } catch (error) {
+        return encodeURI(normalizedPath);
+    }
+}
+
 const baseTemplates = [
     { id: 1, name: '甜酷风吧唧1', category: 'badge', style: 'sweet', url: buildAssetUrl('image/sweet_baji.jpg') },
     { id: 2, name: '横板黑粉爱心小卡1', category: 'photocard', style: 'ins', url: buildAssetUrl('image/hengbanxiaoka 1.2.png') },
@@ -447,15 +460,23 @@ async function loadCutoutImageSource(url) {
         throw new Error('图片地址为空');
     }
 
+    const requestUrl = normalizeAssetRequestUrl(normalizedUrl);
+
     try {
-        const response = await fetch(normalizedUrl, { cache: 'force-cache' });
+        return await loadImageElement(requestUrl);
+    } catch (directLoadError) {
+        // 移动端优先直连图片资源；失败后再回退 fetch+blob。
+    }
+
+    try {
+        const response = await fetch(requestUrl, { cache: 'force-cache' });
         if (!response.ok) {
             throw new Error(`素材请求失败（${response.status}）`);
         }
         const blob = await response.blob();
         return await loadImageElement(blob);
     } catch (error) {
-        return await loadImageElement(normalizedUrl);
+        return await loadImageElement(requestUrl);
     }
 }
 
@@ -728,6 +749,10 @@ function setupStickerCutoutTools() {
     canvas.addEventListener('pointerup', endDraw);
     canvas.addEventListener('pointerleave', endDraw);
     canvas.addEventListener('pointercancel', endDraw);
+    canvas.addEventListener('touchstart', beginDraw, { passive: false });
+    canvas.addEventListener('touchmove', moveDraw, { passive: false });
+    canvas.addEventListener('touchend', endDraw, { passive: false });
+    canvas.addEventListener('touchcancel', endDraw, { passive: false });
 
     closeBtn.addEventListener('click', closeStickerCutoutModal);
     resetBtn.addEventListener('click', resetStickerCutoutMask);
@@ -858,26 +883,26 @@ function updateCropModeUI() {
     const cropGestureLayer = document.getElementById('crop-gesture-layer');
 
     if (btn) {
-        btn.style.background = cropMode ? '#ff5252' : '#ff9800';
-        btn.innerText = cropMode ? '🖌️ 涂抹裁剪中' : '🖌️ 人物涂抹裁剪';
+        btn.style.background = '#ff9800';
+        btn.innerText = '🖌️ 人物涂抹裁剪';
     }
 
     if (cropActionBar) {
-        cropActionBar.hidden = !cropMode;
+        cropActionBar.hidden = true;
     }
 
     if (canvasWrapper) {
-        canvasWrapper.classList.toggle('is-crop-mode', cropMode);
+        canvasWrapper.classList.remove('is-crop-mode');
     }
 
     if (cropGestureLayer) {
-        cropGestureLayer.hidden = !cropMode;
-        cropGestureLayer.classList.toggle('is-active', cropMode);
+        cropGestureLayer.hidden = true;
+        cropGestureLayer.classList.remove('is-active');
     }
 
     if (canvas?.upperCanvasEl) {
-        canvas.upperCanvasEl.style.touchAction = cropMode ? 'none' : 'manipulation';
-        canvas.upperCanvasEl.style.pointerEvents = cropMode ? 'none' : '';
+        canvas.upperCanvasEl.style.touchAction = 'manipulation';
+        canvas.upperCanvasEl.style.pointerEvents = '';
     }
 }
 
@@ -1384,6 +1409,9 @@ function loadImageElement(src) {
     return new Promise((resolve, reject) => {
         const image = new Image();
         const objectUrl = src instanceof Blob ? URL.createObjectURL(src) : '';
+        if (!(src instanceof Blob)) {
+            image.crossOrigin = 'anonymous';
+        }
         image.onload = () => {
             if (objectUrl) {
                 URL.revokeObjectURL(objectUrl);
@@ -3222,54 +3250,7 @@ function initCanvas() {
 }
 
 function toggleCropMode() {
-    if (!requireEditorLogin('裁剪人物')) return;
-
-    if (!cropMode) {
-        const selectedObj = canvas.getActiveObject();
-        if (!selectedObj) {
-            alert('请先选中要裁剪的人物图像');
-            return;
-        }
-        if (selectedObj.type !== 'image') {
-            alert('只能裁剪图像对象');
-            return;
-        }
-        if (selectedObj.objectRole !== 'idol') {
-            alert('当前仅支持裁剪 AI 抠图后的人物对象，请先选中人物');
-            return;
-        }
-
-        idolObj = selectedObj;
-
-        cropMode = true;
-        pendingCropRect = null;
-        cropObjectId = selectedObj.id || Date.now();
-        selectedObj.id = cropObjectId;
-
-        originalCanvasObjects = canvas.getObjects().map((obj) => ({
-            id: obj.id,
-            selectable: obj.selectable,
-            evented: obj.evented
-        }));
-
-        canvas.selection = false;
-        canvas.forEachObject((obj) => {
-            obj.selectable = false;
-            obj.evented = false;
-        });
-
-        canvas.discardActiveObject();
-        canvas.renderAll();
-        updateCropModeUI();
-        return;
-    }
-
-    if (!pendingCropRect) {
-        alert('请先拖拽选择要保留的区域，再点击“确定裁剪”');
-        return;
-    }
-
-    performCrop(pendingCropRect.left, pendingCropRect.top, pendingCropRect.width, pendingCropRect.height);
+    openIdolCutoutModal();
 }
 
 function getCropPointerFromEvent(event) {
@@ -3559,21 +3540,6 @@ async function init() {
     document.getElementById('download-btn').onclick = handleDownloadClick;
     document.getElementById('reset-btn').onclick = resetDesigner;
     document.getElementById('btn-crop-mode').onclick = openIdolCutoutModal;
-    const cropApplyBtn = document.getElementById('crop-apply-btn');
-    const cropCancelBtn = document.getElementById('crop-cancel-btn');
-    if (cropApplyBtn) {
-        cropApplyBtn.onclick = () => {
-            if (!cropMode) return;
-            if (!pendingCropRect) {
-                alert('请先在人物上框选要保留的区域');
-                return;
-            }
-            performCrop(pendingCropRect.left, pendingCropRect.top, pendingCropRect.width, pendingCropRect.height);
-        };
-    }
-    if (cropCancelBtn) {
-        cropCancelBtn.onclick = exitCropMode;
-    }
     updateCropModeUI();
     syncTextToolState();
     scheduleResponsiveCanvasSync();
