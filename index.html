@@ -137,7 +137,7 @@
                             <button id="btn-backward" class="layer-btn">下移一层</button>
                             <button id="btn-send-back" class="layer-btn">置于底层</button>
                             <button id="btn-toggle-template-lock" class="layer-btn" type="button">🔓 锁定模板</button>
-                            <button id="btn-crop-mode" class="layer-btn" type="button" style="background:#ff9800; color:white;">✂️ 裁剪模式</button>
+                            <button id="btn-crop-mode" class="layer-btn" type="button" style="background:#ff9800; color:white;">🖌️ 人物涂抹裁剪</button>
                         </div>
                     </div>
 
@@ -317,6 +317,10 @@
                     <input id="sticker-brush-size" type="range" min="12" max="72" step="2" value="28">
                     <strong id="sticker-brush-size-value">28</strong>
                 </label>
+                <div id="sticker-brush-mode-group" class="sticker-brush-mode-group" hidden>
+                    <button id="sticker-brush-erase-btn" type="button" class="btn btn-secondary is-active">擦除画笔</button>
+                    <button id="sticker-brush-restore-btn" type="button" class="btn btn-secondary">恢复画笔</button>
+                </div>
                 <button id="reset-sticker-cutout-btn" type="button" class="btn btn-secondary">重置涂抹</button>
             </div>
             <div class="sticker-cutout-canvas-shell">
@@ -336,6 +340,6 @@
 
     <script src="app-config.js?v=20260321-03"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
-    <script src="script.js?v=20260321-06"></script>
+    <script src="script.js?v=20260321-07"></script>
 </body>
 </html>

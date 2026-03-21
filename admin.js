@@ -1,4 +1,5 @@
-const API_BASE = window.location.origin;
+const APP_CONFIG = window.FAN_MERCH_CONFIG || {};
+const API_BASE = String(APP_CONFIG.apiBase || window.location.origin || '').replace(/\/+$/, '');
 
 function setAdminMessage(message) {
     const el = document.getElementById('admin-msg');
@@ -24,6 +25,7 @@ async function loadAdminStats() {
     setAdminMessage('正在加载统计...');
 
     const response = await fetch(`${API_BASE}/api/admin/stats`, {
+        cache: 'no-store',
         headers: {
             'x-admin-key': key
         }
@@ -31,11 +33,16 @@ async function loadAdminStats() {
 
     const contentType = String(response.headers.get('content-type') || '').toLowerCase();
     if (!contentType.includes('application/json')) {
-        throw new Error('后台接口返回的不是统计数据，请确认服务端已重启到最新版本');
+        const rawText = await response.text().catch(() => '');
+        const textHint = String(rawText || '').trim().slice(0, 80);
+        throw new Error(`后台接口返回异常（HTTP ${response.status}，非 JSON）${textHint ? `：${textHint}` : ''}，请确认服务端已重启到最新版本`);
     }
 
     const data = await response.json().catch(() => null);
     if (!response.ok) {
+        if (response.status === 401) {
+            throw new Error('管理员密钥无效，请检查 ADMIN_KEY（默认值是 fan-merch-admin）');
+        }
         throw new Error(data?.error || '后台统计加载失败');
     }
 
@@ -115,6 +122,24 @@ function initAdminPage() {
             } catch (error) {
                 setAdminMessage(error.message || '后台统计加载失败');
             }
+        });
+    }
+
+    if (keyInput) {
+        keyInput.addEventListener('keydown', async (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            try {
+                await loadAdminStats();
+            } catch (error) {
+                setAdminMessage(error.message || '后台统计加载失败');
+            }
+        });
+    }
+
+    if (savedKey) {
+        loadAdminStats().catch((error) => {
+            setAdminMessage(error.message || '后台统计加载失败');
         });
     }
 }

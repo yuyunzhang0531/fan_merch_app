@@ -129,8 +129,10 @@ let assetAutoLoadFrame = 0;
 let selfieSegmentationInstance = null;
 let selfieSegmentationLoadPromise = null;
 let stickerCutoutState = {
+    mode: 'sticker',
     sourceUrl: '',
     sourceName: '',
+    sourceObjectId: null,
     image: null,
     maskCanvas: null,
     maskedPreviewCanvas: null,
@@ -138,6 +140,8 @@ let stickerCutoutState = {
     fitScale: 1,
     isDrawing: false,
     lastPoint: null,
+    isDirty: false,
+    brushMode: 'add',
     brushSize: 28,
     isLoading: false
 };
@@ -176,11 +180,15 @@ function scheduleResponsiveCanvasSync() {
 function getStickerCutoutElements() {
     return {
         modal: document.getElementById('sticker-cutout-modal'),
+        heading: document.querySelector('#sticker-cutout-modal h3'),
         canvas: document.getElementById('sticker-cutout-canvas'),
         title: document.getElementById('sticker-cutout-title'),
         loading: document.getElementById('sticker-cutout-loading'),
         brushInput: document.getElementById('sticker-brush-size'),
         brushValue: document.getElementById('sticker-brush-size-value'),
+        brushModeGroup: document.getElementById('sticker-brush-mode-group'),
+        eraseBrushBtn: document.getElementById('sticker-brush-erase-btn'),
+        restoreBrushBtn: document.getElementById('sticker-brush-restore-btn'),
         closeBtn: document.getElementById('close-sticker-cutout-btn'),
         resetBtn: document.getElementById('reset-sticker-cutout-btn'),
         directBtn: document.getElementById('sticker-cutout-direct-btn'),
@@ -188,8 +196,33 @@ function getStickerCutoutElements() {
     };
 }
 
+function updateStickerCutoutBrushModeUI() {
+    const { brushModeGroup, eraseBrushBtn, restoreBrushBtn } = getStickerCutoutElements();
+    const isIdolMode = stickerCutoutState.mode === 'idol';
+    if (brushModeGroup) {
+        brushModeGroup.hidden = !isIdolMode;
+    }
+    if (eraseBrushBtn) {
+        eraseBrushBtn.classList.toggle('is-active', isIdolMode && stickerCutoutState.brushMode === 'erase');
+    }
+    if (restoreBrushBtn) {
+        restoreBrushBtn.classList.toggle('is-active', isIdolMode && stickerCutoutState.brushMode === 'add');
+    }
+}
+
 function setStickerCutoutLoading(isLoading, message = '') {
-    const { modal, title, loading, canvas, brushInput, resetBtn, directBtn, applyBtn } = getStickerCutoutElements();
+    const {
+        modal,
+        title,
+        loading,
+        canvas,
+        brushInput,
+        eraseBrushBtn,
+        restoreBrushBtn,
+        resetBtn,
+        directBtn,
+        applyBtn
+    } = getStickerCutoutElements();
     stickerCutoutState.isLoading = isLoading;
 
     if (modal) {
@@ -210,6 +243,14 @@ function setStickerCutoutLoading(isLoading, message = '') {
 
     if (brushInput) {
         brushInput.disabled = isLoading;
+    }
+
+    if (eraseBrushBtn) {
+        eraseBrushBtn.disabled = isLoading;
+    }
+
+    if (restoreBrushBtn) {
+        restoreBrushBtn.disabled = isLoading;
     }
 
     if (resetBtn) {
@@ -324,7 +365,9 @@ function paintStickerCutoutPoint(fromPoint, toPoint) {
     if (!maskCanvas) return;
     const maskCtx = maskCanvas.getContext('2d');
     if (!maskCtx) return;
+    const isEraseMode = stickerCutoutState.brushMode === 'erase';
     maskCtx.save();
+    maskCtx.globalCompositeOperation = isEraseMode ? 'destination-out' : 'source-over';
     maskCtx.strokeStyle = '#ffffff';
     maskCtx.fillStyle = '#ffffff';
     maskCtx.lineCap = 'round';
@@ -341,15 +384,79 @@ function paintStickerCutoutPoint(fromPoint, toPoint) {
         maskCtx.stroke();
     }
     maskCtx.restore();
+    stickerCutoutState.isDirty = true;
     renderStickerCutoutPreview();
 }
 
 function resetStickerCutoutMask() {
     if (stickerCutoutState.maskCanvas) {
         const ctx = stickerCutoutState.maskCanvas.getContext('2d');
-        ctx?.clearRect(0, 0, stickerCutoutState.maskCanvas.width, stickerCutoutState.maskCanvas.height);
+        if (ctx) {
+            ctx.clearRect(0, 0, stickerCutoutState.maskCanvas.width, stickerCutoutState.maskCanvas.height);
+            if (stickerCutoutState.mode === 'idol') {
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, stickerCutoutState.maskCanvas.width, stickerCutoutState.maskCanvas.height);
+                ctx.restore();
+            }
+        }
     }
+    stickerCutoutState.isDirty = false;
     renderStickerCutoutPreview();
+}
+
+function getActiveIdolObject() {
+    const selectedObj = canvas?.getActiveObject?.();
+    if (selectedObj?.type === 'image' && selectedObj?.objectRole === 'idol') {
+        return selectedObj;
+    }
+    if (idolObj?.type === 'image') {
+        return idolObj;
+    }
+    return null;
+}
+
+function ensureCanvasObjectId(obj) {
+    if (!obj) return null;
+    if (!obj.id) {
+        obj.id = `obj-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    }
+    return obj.id;
+}
+
+function exportImageObjectSource(obj) {
+    const sourceEl = obj?.getElement?.();
+    if (!sourceEl) return '';
+
+    const sourceWidth = Math.max(1, Math.round(Number(obj.width || sourceEl.naturalWidth || sourceEl.width || 0)));
+    const sourceHeight = Math.max(1, Math.round(Number(obj.height || sourceEl.naturalHeight || sourceEl.height || 0)));
+    if (!sourceWidth || !sourceHeight) return '';
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = sourceWidth;
+    tempCanvas.height = sourceHeight;
+    const ctx = tempCanvas.getContext('2d');
+    if (!ctx) return '';
+    ctx.drawImage(sourceEl, 0, 0, sourceWidth, sourceHeight);
+    return tempCanvas.toDataURL('image/png');
+}
+
+async function loadCutoutImageSource(url) {
+    const normalizedUrl = String(url || '').trim();
+    if (!normalizedUrl) {
+        throw new Error('图片地址为空');
+    }
+
+    try {
+        const response = await fetch(normalizedUrl, { cache: 'force-cache' });
+        if (!response.ok) {
+            throw new Error(`素材请求失败（${response.status}）`);
+        }
+        const blob = await response.blob();
+        return await loadImageElement(blob);
+    } catch (error) {
+        return await loadImageElement(normalizedUrl);
+    }
 }
 
 function getStickerCutoutBounds() {
@@ -419,48 +526,152 @@ function closeStickerCutoutModal() {
     stickerCutoutState.isLoading = false;
 }
 
-function openStickerCutoutModal(url, name = '') {
-    if (!requireEditorLogin('选择贴纸')) return;
-    const { modal, title } = getStickerCutoutElements();
+function openStickerCutoutModal(url, name = '', options = {}) {
+    const mode = options.mode === 'idol' ? 'idol' : 'sticker';
+    const actionText = mode === 'idol' ? '人物涂抹裁剪' : '选择贴纸';
+    if (!requireEditorLogin(actionText)) return;
+
+    const { modal, heading, title, directBtn, applyBtn } = getStickerCutoutElements();
     if (!modal) return;
 
     stickerCutoutState.sourceUrl = url;
     stickerCutoutState.sourceName = name || '贴纸';
+    stickerCutoutState.sourceObjectId = options.sourceObjectId || null;
+    stickerCutoutState.mode = mode;
     stickerCutoutState.image = null;
     stickerCutoutState.maskCanvas = null;
     stickerCutoutState.maskedPreviewCanvas = null;
     stickerCutoutState.lastPoint = null;
     stickerCutoutState.isDrawing = false;
+    stickerCutoutState.isDirty = false;
+    stickerCutoutState.brushMode = mode === 'idol' ? 'erase' : 'add';
+    updateStickerCutoutBrushModeUI();
+
+    if (heading) {
+        heading.innerText = mode === 'idol' ? '涂抹裁剪人物' : '涂抹选择贴纸图案';
+    }
+    if (directBtn) {
+        directBtn.style.display = mode === 'idol' ? 'none' : 'inline-flex';
+    }
+    if (applyBtn) {
+        applyBtn.innerText = mode === 'idol' ? '应用人物裁剪' : '添加选中图案';
+    }
 
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
     resizeStickerCutoutCanvas();
-    setStickerCutoutLoading(true, `正在载入 ${stickerCutoutState.sourceName}，马上进入涂抹/整张导入选择区...`);
+    const loadingMessage = mode === 'idol'
+        ? `正在载入 ${stickerCutoutState.sourceName}，准备进入人物涂抹裁剪...`
+        : `正在载入 ${stickerCutoutState.sourceName}，马上进入涂抹/整张导入选择区...`;
+    setStickerCutoutLoading(true, loadingMessage);
 
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => {
-        stickerCutoutState.image = image;
-        stickerCutoutState.maskCanvas = null;
-        stickerCutoutState.maskedPreviewCanvas = null;
-        stickerCutoutState.lastPoint = null;
-        if (title) {
-            title.innerText = `当前素材：${stickerCutoutState.sourceName}。涂抹要保留的图案，再单独加入画布。`;
+    (async () => {
+        try {
+            const image = await loadCutoutImageSource(url);
+            stickerCutoutState.image = image;
+            stickerCutoutState.maskCanvas = null;
+            stickerCutoutState.maskedPreviewCanvas = null;
+            stickerCutoutState.lastPoint = null;
+            if (title) {
+                title.innerText = mode === 'idol'
+                    ? `当前对象：${stickerCutoutState.sourceName}。在人物上涂抹要去掉的区域，完成后点击“应用人物裁剪”。`
+                    : `当前素材：${stickerCutoutState.sourceName}。涂抹要保留的图案，再单独加入画布。`;
+            }
+            resizeStickerCutoutCanvas();
+            resetStickerCutoutMask();
+            setStickerCutoutLoading(false);
+        } catch (error) {
+            setStickerCutoutLoading(false, '素材加载失败，请重新选择其他素材。');
+            closeStickerCutoutModal();
+            alert(error.message || '素材加载失败，请检查图片路径');
         }
-        resizeStickerCutoutCanvas();
-        resetStickerCutoutMask();
-        setStickerCutoutLoading(false);
+    })();
+}
+
+function openIdolCutoutModal() {
+    if (!requireEditorLogin('人物涂抹裁剪')) return;
+
+    const targetObj = getActiveIdolObject();
+    if (!targetObj) {
+        alert('请先选中要裁剪的人物对象');
+        return;
+    }
+
+    const objectId = ensureCanvasObjectId(targetObj);
+    const sourceDataUrl = exportImageObjectSource(targetObj);
+    if (!sourceDataUrl) {
+        alert('当前人物无法进入涂抹裁剪，请重新抠图后再试');
+        return;
+    }
+
+    openStickerCutoutModal(sourceDataUrl, '当前人物', {
+        mode: 'idol',
+        sourceObjectId: objectId
+    });
+}
+
+function applyIdolCutoutToCanvas(dataUrl) {
+    const targetId = stickerCutoutState.sourceObjectId;
+    const targetObj = canvas?.getObjects?.().find((obj) => obj.id === targetId);
+    if (!targetObj || targetObj.type !== 'image') {
+        throw new Error('找不到要替换的人物对象，请重新选择后再试');
+    }
+
+    const prevIndex = canvas.getObjects().indexOf(targetObj);
+    const targetState = {
+        left: Number(targetObj.left || 0),
+        top: Number(targetObj.top || 0),
+        scaleX: Number(targetObj.scaleX || 1),
+        scaleY: Number(targetObj.scaleY || 1),
+        angle: Number(targetObj.angle || 0),
+        flipX: Boolean(targetObj.flipX),
+        flipY: Boolean(targetObj.flipY),
+        originX: targetObj.originX || 'center',
+        originY: targetObj.originY || 'center',
+        id: targetObj.id
     };
-    image.onerror = () => {
-        setStickerCutoutLoading(false, '贴纸加载失败，请重新选择其他素材。');
-        closeStickerCutoutModal();
-        alert('贴纸素材加载失败，请检查图片路径');
-    };
-    image.src = url;
+
+    return new Promise((resolve, reject) => {
+        fabric.Image.fromURL(dataUrl, (newImg) => {
+            if (!newImg) {
+                reject(new Error('应用人物裁剪失败，请重试'));
+                return;
+            }
+
+            canvas.remove(targetObj);
+            newImg.set({
+                ...targetState,
+                selectable: true,
+                evented: true,
+                cornerColor: '#ff69b4',
+                borderColor: '#ff69b4',
+                transparentCorners: false,
+                objectRole: 'idol'
+            });
+            canvas.insertAt(newImg, Math.max(prevIndex, 0));
+            idolObj = newImg;
+            canvas.setActiveObject(newImg);
+            canvas.renderAll();
+            applyEditorPermission();
+            scheduleDraftSave();
+            resolve(newImg);
+        }, { crossOrigin: 'anonymous' });
+    });
 }
 
 function setupStickerCutoutTools() {
-    const { modal, canvas, brushInput, brushValue, closeBtn, resetBtn, directBtn, applyBtn } = getStickerCutoutElements();
+    const {
+        modal,
+        canvas,
+        brushInput,
+        brushValue,
+        eraseBrushBtn,
+        restoreBrushBtn,
+        closeBtn,
+        resetBtn,
+        directBtn,
+        applyBtn
+    } = getStickerCutoutElements();
     if (!modal || !canvas || !brushInput || !closeBtn || !resetBtn || !directBtn || !applyBtn) return;
 
     const syncBrushValue = () => {
@@ -472,6 +683,20 @@ function setupStickerCutoutTools() {
 
     brushInput.addEventListener('input', syncBrushValue);
     syncBrushValue();
+
+    if (eraseBrushBtn) {
+        eraseBrushBtn.addEventListener('click', () => {
+            stickerCutoutState.brushMode = 'erase';
+            updateStickerCutoutBrushModeUI();
+        });
+    }
+
+    if (restoreBrushBtn) {
+        restoreBrushBtn.addEventListener('click', () => {
+            stickerCutoutState.brushMode = 'add';
+            updateStickerCutoutBrushModeUI();
+        });
+    }
 
     const beginDraw = (event) => {
         if (stickerCutoutState.isLoading) return;
@@ -507,17 +732,32 @@ function setupStickerCutoutTools() {
     closeBtn.addEventListener('click', closeStickerCutoutModal);
     resetBtn.addEventListener('click', resetStickerCutoutMask);
     directBtn.addEventListener('click', () => {
+        if (stickerCutoutState.mode === 'idol') {
+            return;
+        }
         addStickerToCanvas(stickerCutoutState.sourceUrl, stickerCutoutState.sourceName);
         closeStickerCutoutModal();
     });
-    applyBtn.addEventListener('click', () => {
+    applyBtn.addEventListener('click', async () => {
         const dataUrl = extractStickerCutoutDataUrl();
         if (!dataUrl) {
-            alert('请先在贴纸图上涂抹要保留的图案');
+            if (stickerCutoutState.mode === 'idol') {
+                alert('请先在人物上涂抹要去掉的区域');
+            } else {
+                alert('请先在贴纸图上涂抹要保留的图案');
+            }
             return;
         }
-        addStickerToCanvas(dataUrl, `${stickerCutoutState.sourceName}-选中图案`);
-        closeStickerCutoutModal();
+        try {
+            if (stickerCutoutState.mode === 'idol') {
+                await applyIdolCutoutToCanvas(dataUrl);
+            } else {
+                addStickerToCanvas(dataUrl, `${stickerCutoutState.sourceName}-选中图案`);
+            }
+            closeStickerCutoutModal();
+        } catch (error) {
+            alert(error.message || '应用涂抹结果失败');
+        }
     });
 
     modal.addEventListener('click', (event) => {
@@ -596,7 +836,11 @@ function confirmAuthRedirect(actionText = '进行操作') {
 }
 
 function requireEditorLogin(actionText = '进行制作') {
-    return true;
+    if (isUserLoggedIn()) {
+        return true;
+    }
+    confirmAuthRedirect(actionText);
+    return false;
 }
 
 function updateCropModeUI() {
@@ -607,7 +851,7 @@ function updateCropModeUI() {
 
     if (btn) {
         btn.style.background = cropMode ? '#ff5252' : '#ff9800';
-        btn.innerText = cropMode ? '✂️ 裁剪中' : '✂️ 裁剪模式';
+        btn.innerText = cropMode ? '🖌️ 涂抹裁剪中' : '🖌️ 人物涂抹裁剪';
     }
 
     if (cropActionBar) {
@@ -2996,8 +3240,9 @@ function getCropPointerFromEvent(event) {
         return null;
     }
 
-    const x = ((clientX - canvasRect.left) / canvasRect.width) * canvas.getWidth();
-    const y = ((clientY - canvasRect.top) / canvasRect.height) * canvas.getHeight();
+    // Convert screen position to the fixed logical canvas space (800x800).
+    const x = ((clientX - canvasRect.left) / canvasRect.width) * CANVAS_WIDTH;
+    const y = ((clientY - canvasRect.top) / canvasRect.height) * CANVAS_HEIGHT;
     return { x, y };
 }
 
@@ -3260,7 +3505,7 @@ async function init() {
     document.getElementById('generate-btn').onclick = handleGenerate;
     document.getElementById('download-btn').onclick = handleDownloadClick;
     document.getElementById('reset-btn').onclick = resetDesigner;
-    document.getElementById('btn-crop-mode').onclick = toggleCropMode;
+    document.getElementById('btn-crop-mode').onclick = openIdolCutoutModal;
     const cropApplyBtn = document.getElementById('crop-apply-btn');
     const cropCancelBtn = document.getElementById('crop-cancel-btn');
     if (cropApplyBtn) {

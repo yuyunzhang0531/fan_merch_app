@@ -1151,6 +1151,24 @@ header p {
     margin-bottom: 14px;
 }
 
+.sticker-brush-mode-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sticker-brush-mode-group .btn {
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+}
+
+.sticker-brush-mode-group .btn.is-active {
+    background: #ff6b9c;
+    color: #fff;
+    border-color: #ff6b9c;
+}
+
 .sticker-cutout-brush-label {
     flex: 1;
     display: grid;
@@ -1260,6 +1278,14 @@ header p {
         align-items: stretch;
         gap: 10px;
         margin-bottom: 10px;
+    }
+
+    .sticker-brush-mode-group {
+        width: 100%;
+    }
+
+    .sticker-brush-mode-group .btn {
+        flex: 1;
     }
 
     .sticker-cutout-brush-label {
