@@ -318,8 +318,8 @@
                     <strong id="sticker-brush-size-value">28</strong>
                 </label>
                 <div id="sticker-brush-mode-group" class="sticker-brush-mode-group" hidden>
-                    <button id="sticker-brush-erase-btn" type="button" class="btn btn-secondary is-active">擦除画笔</button>
-                    <button id="sticker-brush-restore-btn" type="button" class="btn btn-secondary">恢复画笔</button>
+                    <button id="sticker-brush-erase-btn" type="button" class="btn btn-secondary">擦除保留区</button>
+                    <button id="sticker-brush-restore-btn" type="button" class="btn btn-secondary is-active">保留画笔</button>
                 </div>
                 <button id="reset-sticker-cutout-btn" type="button" class="btn btn-secondary">重置涂抹</button>
             </div>
@@ -330,7 +330,7 @@
                 </div>
                 <canvas id="sticker-cutout-canvas" width="520" height="520"></canvas>
             </div>
-            <div class="sticker-cutout-tip">涂抹需要的部分会高亮显示。想直接用整张素材，也可以不涂抹。</div>
+            <div class="sticker-cutout-tip">人物裁剪时，直接涂抹想留下的区域；贴纸模式下，也可以不涂抹直接整张添加。</div>
             <div class="button-group sticker-cutout-actions">
                 <button id="sticker-cutout-direct-btn" type="button" class="btn btn-secondary">整张添加</button>
                 <button id="sticker-cutout-apply-btn" type="button" class="btn btn-primary">添加选中图案</button>
@@ -340,6 +340,6 @@
 
     <script src="app-config.js?v=20260321-03"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
-    <script src="script.js?v=20260321-07"></script>
+    <script src="script.js?v=20260321-08"></script>
 </body>
 </html>

@@ -203,6 +203,12 @@ function updateStickerCutoutBrushModeUI() {
         brushModeGroup.hidden = !isIdolMode;
     }
     if (eraseBrushBtn) {
+        eraseBrushBtn.innerText = isIdolMode ? '擦除保留区' : '擦除画笔';
+    }
+    if (restoreBrushBtn) {
+        restoreBrushBtn.innerText = isIdolMode ? '保留画笔' : '恢复画笔';
+    }
+    if (eraseBrushBtn) {
         eraseBrushBtn.classList.toggle('is-active', isIdolMode && stickerCutoutState.brushMode === 'erase');
     }
     if (restoreBrushBtn) {
@@ -393,12 +399,6 @@ function resetStickerCutoutMask() {
         const ctx = stickerCutoutState.maskCanvas.getContext('2d');
         if (ctx) {
             ctx.clearRect(0, 0, stickerCutoutState.maskCanvas.width, stickerCutoutState.maskCanvas.height);
-            if (stickerCutoutState.mode === 'idol') {
-                ctx.save();
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, stickerCutoutState.maskCanvas.width, stickerCutoutState.maskCanvas.height);
-                ctx.restore();
-            }
         }
     }
     stickerCutoutState.isDirty = false;
@@ -544,7 +544,7 @@ function openStickerCutoutModal(url, name = '', options = {}) {
     stickerCutoutState.lastPoint = null;
     stickerCutoutState.isDrawing = false;
     stickerCutoutState.isDirty = false;
-    stickerCutoutState.brushMode = mode === 'idol' ? 'erase' : 'add';
+    stickerCutoutState.brushMode = 'add';
     updateStickerCutoutBrushModeUI();
 
     if (heading) {
@@ -574,7 +574,7 @@ function openStickerCutoutModal(url, name = '', options = {}) {
             stickerCutoutState.lastPoint = null;
             if (title) {
                 title.innerText = mode === 'idol'
-                    ? `当前对象：${stickerCutoutState.sourceName}。在人物上涂抹要去掉的区域，完成后点击“应用人物裁剪”。`
+                    ? `当前对象：${stickerCutoutState.sourceName}。请直接在人物上涂抹想保留的区域，不需要的部分留空；如果涂错了，可切换“擦除保留区”修正。`
                     : `当前素材：${stickerCutoutState.sourceName}。涂抹要保留的图案，再单独加入画布。`;
             }
             resizeStickerCutoutCanvas();
@@ -742,7 +742,7 @@ function setupStickerCutoutTools() {
         const dataUrl = extractStickerCutoutDataUrl();
         if (!dataUrl) {
             if (stickerCutoutState.mode === 'idol') {
-                alert('请先在人物上涂抹要去掉的区域');
+                alert('请先在人物上涂抹想保留的区域');
             } else {
                 alert('请先在贴纸图上涂抹要保留的图案');
             }
@@ -816,7 +816,7 @@ function goToAuthPage(actionText = '') {
     try {
         sessionStorage.setItem('fanMerchAuthReturnTo', 'index.html');
         if (actionText) {
-            sessionStorage.setItem('fanMerchAuthMessage', `请先登录后再${actionText}`);
+            sessionStorage.setItem('fanMerchAuthMessage', `未登录，请先登录后再${actionText}`);
         } else {
             sessionStorage.removeItem('fanMerchAuthMessage');
         }
@@ -827,12 +827,9 @@ function goToAuthPage(actionText = '') {
 }
 
 function confirmAuthRedirect(actionText = '进行操作') {
-    const shouldRedirect = window.confirm(`请先登录后再${actionText}。\n点击“确定”前往登录/注册页面。`);
-    if (!shouldRedirect) {
-        return false;
-    }
+    window.alert(`未登录，请先登录后再${actionText}`);
     goToAuthPage(actionText);
-    return true;
+    return false;
 }
 
 function requireEditorLogin(actionText = '进行制作') {
@@ -2596,6 +2593,7 @@ async function handleDownloadClick(event) {
         event.preventDefault();
         event.stopPropagation();
     }
+    if (!requireEditorLogin('制作')) return;
     if (downloadInProgress) return;
 
     downloadInProgress = true;
@@ -2760,9 +2758,14 @@ function setupUpload() {
     const generateBtn = document.getElementById('generate-btn');
 
     area.onclick = () => {
+        if (!requireEditorLogin('制作')) return;
         input.click();
     };
     input.onchange = async (event) => {
+        if (!requireEditorLogin('制作')) {
+            input.value = '';
+            return;
+        }
         const file = event.target.files[0];
         if (!file) return;
 
@@ -3066,6 +3069,7 @@ function setupMobileWorkspace() {
 }
 
 async function handleGenerate() {
+    if (!requireEditorLogin('制作')) return;
     if (!pendingFile) {
         alert('请先上传照片');
         return;
