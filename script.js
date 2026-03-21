@@ -840,6 +840,17 @@ function requireEditorLogin(actionText = '进行制作') {
     return false;
 }
 
+function guardEditorInteraction(event, actionText = '进行制作') {
+    if (isUserLoggedIn()) {
+        return true;
+    }
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+    confirmAuthRedirect(actionText);
+    return false;
+}
+
 function updateCropModeUI() {
     const btn = document.getElementById('btn-crop-mode');
     const cropActionBar = document.getElementById('crop-action-bar');
@@ -1981,22 +1992,23 @@ function restoreDraftState() {
 
 function applyEditorPermission() {
     if (!canvas) return;
-    canvas.selection = !cropMode;
-    canvas.skipTargetFind = false;
+    const canEdit = isUserLoggedIn();
+    canvas.selection = canEdit && !cropMode;
+    canvas.skipTargetFind = !canEdit;
 
     canvas.forEachObject((obj) => {
         if (obj.isCropPreview) return;
         const isTpl = obj === templateImage;
-        obj.lockMovementX = false;
-        obj.lockMovementY = false;
-        obj.lockScalingX = false;
-        obj.lockScalingY = false;
-        obj.lockRotation = false;
-        obj.selectable = true;
-        obj.evented = true;
-        obj.hasControls = true;
+        obj.lockMovementX = !canEdit;
+        obj.lockMovementY = !canEdit;
+        obj.lockScalingX = !canEdit;
+        obj.lockScalingY = !canEdit;
+        obj.lockRotation = !canEdit;
+        obj.selectable = canEdit;
+        obj.evented = canEdit;
+        obj.hasControls = canEdit;
 
-        if (isTpl) {
+        if (isTpl && canEdit) {
             obj.selectable = !templateLocked;
             obj.evented = !templateLocked;
             obj.hasControls = !templateLocked;
@@ -2004,6 +2016,42 @@ function applyEditorPermission() {
     });
 
     canvas.requestRenderAll();
+}
+
+function setupEditorLoginGuards() {
+    const guardConfigs = [
+        { selector: '.canvas-container-wrapper', actionText: '编辑画布' },
+        { selector: '#upload-area', actionText: '制作' },
+        { selector: '#generate-btn', actionText: '制作' },
+        { selector: '#download-btn', actionText: '下载作品' },
+        { selector: '#reset-btn', actionText: '进行重置' },
+        { selector: '#template-grid', actionText: '选择模板' },
+        { selector: '#sticker-grid', actionText: '添加贴纸' },
+        { selector: '#btn-crop-mode', actionText: '裁剪人物' },
+        { selector: '#duplicate-btn', actionText: '复制图像' },
+        { selector: '#delete-btn', actionText: '删除对象' },
+        { selector: '#btn-bring-front', actionText: '操作图层' },
+        { selector: '#btn-forward', actionText: '操作图层' },
+        { selector: '#btn-backward', actionText: '操作图层' },
+        { selector: '#btn-send-back', actionText: '操作图层' },
+        { selector: '#btn-toggle-template-lock', actionText: '操作模板' },
+        { selector: '#add-text-btn', actionText: '添加文字' },
+        { selector: '#apply-text-style-btn', actionText: '编辑文字' },
+        { selector: '#cutout-library-grid', actionText: '使用本地人物库' }
+    ];
+
+    guardConfigs.forEach(({ selector, actionText }) => {
+        const element = document.querySelector(selector);
+        if (!element || element.dataset.loginGuardBound === 'true') {
+            return;
+        }
+        const handler = (event) => {
+            guardEditorInteraction(event, actionText);
+        };
+        element.addEventListener('pointerdown', handler, true);
+        element.addEventListener('click', handler, true);
+        element.dataset.loginGuardBound = 'true';
+    });
 }
 
 async function syncCurrentUserState() {
@@ -3492,6 +3540,7 @@ async function init() {
     initCanvas();
     initAuthEntry();
     setupMobileNavMenu();
+    setupEditorLoginGuards();
     await syncCurrentUserState();
     renderUI();
     setupFilterEvents();
