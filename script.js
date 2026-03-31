@@ -7,6 +7,7 @@ const APP_CONFIG = window.FAN_MERCH_CONFIG || {};
 const API_BASE = String(APP_CONFIG.apiBase || window.location.origin || '').replace(/\/+$/, '');
 const SERVER_WAKEUP_HINT_DELAY_MS = 5000;
 const SERVER_WAKEUP_HINT_MESSAGE = '服务器正在启动，首次运行可能需要 50 秒，请勿关闭页面...';
+const ASSET_LOAD_TIMEOUT_MS = 8000;
 
 function buildAssetUrl(assetPath) {
     const normalizedPath = String(assetPath || '').trim();
@@ -463,20 +464,35 @@ async function loadCutoutImageSource(url) {
     const requestUrl = normalizeAssetRequestUrl(normalizedUrl);
 
     try {
-        return await loadImageElement(requestUrl);
+        return await loadImageElement(requestUrl, ASSET_LOAD_TIMEOUT_MS);
     } catch (directLoadError) {
-        // 移动端优先直连图片资源；失败后再回退 fetch+blob。
+        // 移动端直连图片资源可能会卡住，这里超时后回退 fetch+blob。
     }
 
     try {
-        const response = await fetch(requestUrl, { cache: 'force-cache' });
+        const abortController = new AbortController();
+        const timeoutId = window.setTimeout(() => {
+            abortController.abort();
+        }, ASSET_LOAD_TIMEOUT_MS);
+        let response;
+        try {
+            response = await fetch(requestUrl, {
+                cache: 'force-cache',
+                signal: abortController.signal
+            });
+        } finally {
+            window.clearTimeout(timeoutId);
+        }
         if (!response.ok) {
             throw new Error(`素材请求失败（${response.status}）`);
         }
         const blob = await response.blob();
-        return await loadImageElement(blob);
+        return await loadImageElement(blob, ASSET_LOAD_TIMEOUT_MS);
     } catch (error) {
-        return await loadImageElement(requestUrl);
+        if (error?.name === 'AbortError') {
+            throw new Error('贴纸素材加载超时，请稍后重试或换一张贴纸');
+        }
+        return await loadImageElement(requestUrl, ASSET_LOAD_TIMEOUT_MS);
     }
 }
 
@@ -1412,25 +1428,43 @@ function startServerWakeupHintTimer() {
     };
 }
 
-function loadImageElement(src) {
+function loadImageElement(src, timeoutMs = 0) {
     return new Promise((resolve, reject) => {
         const image = new Image();
         const objectUrl = src instanceof Blob ? URL.createObjectURL(src) : '';
+        let settled = false;
+        let timeoutId = 0;
         if (!(src instanceof Blob)) {
             image.crossOrigin = 'anonymous';
         }
-        image.onload = () => {
+        const cleanup = () => {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
             if (objectUrl) {
                 URL.revokeObjectURL(objectUrl);
             }
+        };
+        image.onload = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
             resolve(image);
         };
         image.onerror = () => {
-            if (objectUrl) {
-                URL.revokeObjectURL(objectUrl);
-            }
+            if (settled) return;
+            settled = true;
+            cleanup();
             reject(new Error('图片解析失败，请换一张 JPG 或 PNG 再试'));
         };
+        if (timeoutMs > 0) {
+            timeoutId = window.setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(new Error('图片加载超时'));
+            }, timeoutMs);
+        }
         image.src = objectUrl || src;
     });
 }
