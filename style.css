@@ -1207,6 +1207,7 @@ header p {
     color: #6a537d;
     text-align: center;
     z-index: 2;
+    pointer-events: none;
 }
 
 .sticker-cutout-loading strong {

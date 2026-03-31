@@ -231,6 +231,10 @@ function updateStickerCutoutBrushModeUI() {
     }
 }
 
+function shouldBlockStickerCutoutLoading() {
+    return !(stickerCutoutState.mode === 'sticker' && isMobileLikeDevice());
+}
+
 function setStickerCutoutLoading(isLoading, message = '') {
     const {
         modal,
@@ -244,6 +248,7 @@ function setStickerCutoutLoading(isLoading, message = '') {
         directBtn,
         applyBtn
     } = getStickerCutoutElements();
+    const shouldBlock = shouldBlockStickerCutoutLoading();
     stickerCutoutState.isLoading = isLoading;
 
     if (modal) {
@@ -255,35 +260,35 @@ function setStickerCutoutLoading(isLoading, message = '') {
     }
 
     if (loading) {
-        loading.hidden = !isLoading;
+        loading.hidden = shouldBlock ? !isLoading : true;
     }
 
     if (canvas) {
-        canvas.style.visibility = isLoading ? 'hidden' : 'visible';
+        canvas.style.visibility = shouldBlock && isLoading ? 'hidden' : 'visible';
     }
 
     if (brushInput) {
-        brushInput.disabled = isLoading;
+        brushInput.disabled = shouldBlock && isLoading;
     }
 
     if (eraseBrushBtn) {
-        eraseBrushBtn.disabled = isLoading;
+        eraseBrushBtn.disabled = shouldBlock && isLoading;
     }
 
     if (restoreBrushBtn) {
-        restoreBrushBtn.disabled = isLoading;
+        restoreBrushBtn.disabled = shouldBlock && isLoading;
     }
 
     if (resetBtn) {
-        resetBtn.disabled = isLoading;
+        resetBtn.disabled = shouldBlock && isLoading;
     }
 
     if (directBtn) {
-        directBtn.disabled = isLoading;
+        directBtn.disabled = shouldBlock && isLoading;
     }
 
     if (applyBtn) {
-        applyBtn.disabled = isLoading;
+        applyBtn.disabled = shouldBlock && isLoading;
     }
 }
 
