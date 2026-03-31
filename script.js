@@ -14,7 +14,7 @@ function buildAssetUrl(assetPath) {
     if (/^(https?:)?\/\//i.test(normalizedPath) || normalizedPath.startsWith('data:') || normalizedPath.startsWith('blob:')) {
         return normalizedPath;
     }
-    return normalizedPath.replace(/^\/+/, '');
+    return encodeURI(normalizedPath.replace(/^\/+/, ''));
 }
 
 function normalizeAssetRequestUrl(assetPath) {
@@ -588,7 +588,10 @@ function openStickerCutoutModal(url, name = '', options = {}) {
 
     (async () => {
         try {
-            const image = await loadCutoutImageSource(url);
+            const preloadedImage = options.preloadedImageElement;
+            const image = preloadedImage?.complete && preloadedImage.naturalWidth > 0
+                ? preloadedImage
+                : await loadCutoutImageSource(options.preferredUrl || url);
             stickerCutoutState.image = image;
             stickerCutoutState.maskCanvas = null;
             stickerCutoutState.maskedPreviewCanvas = null;
@@ -1341,7 +1344,11 @@ function createAssetCard(name, previewUrl, originalUrl, onClick) {
     div.appendChild(title);
     div.onclick = (event) => {
         event.preventDefault();
-        onClick();
+        onClick({
+            displayedSrc: img.currentSrc || img.src || '',
+            imageElement: img,
+            isReady: img.complete && img.naturalWidth > 0
+        });
     };
 
     return div;
@@ -2914,8 +2921,11 @@ function renderUI() {
     stickerGrid.innerHTML = '';
     if (shouldRenderStickers) {
         filteredStickers.slice(0, visibleStickerCount).forEach((sticker) => {
-            stickerGrid.appendChild(createAssetCard(sticker.name, getPreviewAssetUrl(sticker.url), sticker.url, () => {
-                openStickerCutoutModal(sticker.url, sticker.name);
+            stickerGrid.appendChild(createAssetCard(sticker.name, getPreviewAssetUrl(sticker.url), sticker.url, (assetState = {}) => {
+                openStickerCutoutModal(sticker.url, sticker.name, {
+                    preferredUrl: assetState.displayedSrc || getPreviewAssetUrl(sticker.url) || sticker.url,
+                    preloadedImageElement: assetState.isReady ? assetState.imageElement : null
+                });
             }));
         });
     }
