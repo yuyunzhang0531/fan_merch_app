@@ -8,6 +8,7 @@ const API_BASE = String(APP_CONFIG.apiBase || window.location.origin || '').repl
 const SERVER_WAKEUP_HINT_DELAY_MS = 5000;
 const SERVER_WAKEUP_HINT_MESSAGE = '服务器正在启动，首次运行可能需要 50 秒，请勿关闭页面...';
 const ASSET_LOAD_TIMEOUT_MS = 8000;
+const MOBILE_STICKER_CUTOUT_MAX_DIMENSION = 1400;
 
 function buildAssetUrl(assetPath) {
     const normalizedPath = String(assetPath || '').trim();
@@ -605,9 +606,15 @@ function openStickerCutoutModal(url, name = '', options = {}) {
     (async () => {
         try {
             const preloadedImage = options.preloadedImageElement;
-            const image = preloadedImage?.complete && preloadedImage.naturalWidth > 0
+            let image = preloadedImage?.complete && preloadedImage.naturalWidth > 0
                 ? preloadedImage
                 : await loadCutoutImageSource(options.preferredUrl || url);
+
+            if (mode === 'sticker' && isMobileLikeDevice()) {
+                const optimizedDataUrl = buildOptimizedStickerCutoutSource(image, MOBILE_STICKER_CUTOUT_MAX_DIMENSION);
+                image = await loadImageElement(optimizedDataUrl, ASSET_LOAD_TIMEOUT_MS);
+            }
+
             stickerCutoutState.image = image;
             stickerCutoutState.maskCanvas = null;
             stickerCutoutState.maskedPreviewCanvas = null;
@@ -1490,6 +1497,30 @@ function isHeicLikeFile(file) {
 function isMobileLikeDevice() {
     return window.matchMedia('(max-width: 768px)').matches
         || /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '');
+}
+
+function buildOptimizedStickerCutoutSource(image, maxDimension = MOBILE_STICKER_CUTOUT_MAX_DIMENSION) {
+    const sourceWidth = Number(image?.naturalWidth || image?.width || 0);
+    const sourceHeight = Number(image?.naturalHeight || image?.height || 0);
+    if (!sourceWidth || !sourceHeight) {
+        throw new Error('贴纸素材尺寸异常，无法处理');
+    }
+
+    const longestSide = Math.max(sourceWidth, sourceHeight);
+    const scale = longestSide > maxDimension ? maxDimension / longestSide : 1;
+    const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+    const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = targetWidth;
+    tempCanvas.height = targetHeight;
+    const ctx = tempCanvas.getContext('2d');
+    if (!ctx) {
+        throw new Error('贴纸素材压缩失败');
+    }
+    ctx.clearRect(0, 0, targetWidth, targetHeight);
+    ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+    return tempCanvas.toDataURL('image/png');
 }
 
 function createUploadLikeFile(blob, originalFileName) {
