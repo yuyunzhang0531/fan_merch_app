@@ -307,6 +307,15 @@
                     <input id="sticker-brush-size" type="range" min="12" max="72" step="2" value="28">
                     <strong id="sticker-brush-size-value">28</strong>
                 </label>
+                <div class="sticker-cutout-zoom-box">
+                    <span>查看缩放</span>
+                    <div class="sticker-cutout-zoom-controls">
+                        <button id="sticker-zoom-out-btn" type="button" class="btn btn-secondary">-</button>
+                        <input id="sticker-zoom-level" type="range" min="1" max="4" step="0.25" value="1">
+                        <button id="sticker-zoom-in-btn" type="button" class="btn btn-secondary">+</button>
+                    </div>
+                    <strong id="sticker-zoom-level-value">1.0x</strong>
+                </div>
                 <div id="sticker-brush-mode-group" class="sticker-brush-mode-group" hidden>
                     <button id="sticker-brush-erase-btn" type="button" class="btn btn-secondary">擦除保留区</button>
                     <button id="sticker-brush-restore-btn" type="button" class="btn btn-secondary is-active">保留画笔</button>
@@ -326,6 +335,6 @@
 
     <script src="app-config.js?v=20260321-03"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
-    <script src="script.js?v=20260331-05"></script>
+    <script src="script.js?v=20260331-07"></script>
 </body>
 </html>

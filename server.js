@@ -13,6 +13,7 @@ const REMOVE_BG_API_URL = 'https://api.remove.bg/v1.0/removebg';
 const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY || 'EtDYCyrywLMrc6MMc5YERjVV';
 const REMOVE_BG_OUTPUT_SIZE = 'auto';
 const REMOVE_BG_UPSTREAM_TIMEOUT_MS = 45000;
+const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, 'data');
@@ -35,8 +36,6 @@ const upload = multer({
     callback(null, true);
   }
 });
-
-const sessions = new Map();
 
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -71,6 +70,25 @@ function hashPassword(password) {
 
 function createToken() {
   return crypto.randomBytes(24).toString('hex');
+}
+
+function getSessionExpiryIso() {
+  return new Date(Date.now() + SESSION_DURATION_MS).toISOString();
+}
+
+async function createSession(userId) {
+  const token = createToken();
+  await run('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)', [token, userId, getSessionExpiryIso()]);
+  return token;
+}
+
+async function deleteSession(token) {
+  if (!token) return;
+  await run('DELETE FROM sessions WHERE token = ?', [token]);
+}
+
+async function pruneExpiredSessions() {
+  await run("DELETE FROM sessions WHERE datetime(expires_at) <= datetime('now')");
 }
 
 async function initDb() {
@@ -135,17 +153,43 @@ async function initDb() {
     verified_at TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`);
+
+  await pruneExpiredSessions();
 }
 
-function authRequired(req, res, next) {
-  const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token || !sessions.has(token)) {
-    return res.status(401).json({ error: '未登录或登录已过期' });
+async function authRequired(req, res, next) {
+  try {
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!token) {
+      return res.status(401).json({ error: '未登录或登录已过期' });
+    }
+
+    const sessionRow = await get('SELECT user_id, expires_at FROM sessions WHERE token = ?', [token]);
+    if (!sessionRow) {
+      return res.status(401).json({ error: '未登录或登录已过期' });
+    }
+
+    const expiresAt = Date.parse(sessionRow.expires_at || '');
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      await deleteSession(token);
+      return res.status(401).json({ error: '未登录或登录已过期' });
+    }
+
+    req.userId = sessionRow.user_id;
+    req.token = token;
+    next();
+  } catch (error) {
+    res.status(500).json({ error: '登录状态校验失败' });
   }
-  req.userId = sessions.get(token);
-  req.token = token;
-  next();
 }
 
 function adminRequired(req, res, next) {
@@ -242,7 +286,7 @@ app.get('/api/admin/stats', adminRequired, async (req, res) => {
         totalFavorites: Number(favoritesCountRow?.count || 0),
         totalCheckIns: Number(checkInCountRow?.count || 0),
         totalCreditsBalance: Number(creditsSumRow?.total || 0),
-        activeSessions: sessions.size
+        activeSessions: Number((await get("SELECT COUNT(*) AS count FROM sessions WHERE datetime(expires_at) > datetime('now')"))?.count || 0)
       },
       recentUsers: recentUsers.map((row) => ({
         email: row.email,
@@ -296,8 +340,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: '邮箱或密码错误' });
     }
 
-    const token = createToken();
-    sessions.set(token, user.id);
+    const token = await createSession(user.id);
 
     return res.json({ ok: true, token, email });
   } catch (e) {
@@ -305,8 +348,8 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/logout', authRequired, (req, res) => {
-  sessions.delete(req.token);
+app.post('/api/auth/logout', authRequired, async (req, res) => {
+  await deleteSession(req.token);
   res.json({ ok: true });
 });
 

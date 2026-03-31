@@ -158,6 +158,10 @@ let stickerCutoutState = {
     isDirty: false,
     brushMode: 'add',
     brushSize: 28,
+    zoom: 1,
+    isPinching: false,
+    pinchStartDistance: 0,
+    pinchStartZoom: 1,
     isLoading: false
 };
 
@@ -201,6 +205,10 @@ function getStickerCutoutElements() {
         loading: document.getElementById('sticker-cutout-loading'),
         brushInput: document.getElementById('sticker-brush-size'),
         brushValue: document.getElementById('sticker-brush-size-value'),
+        zoomInput: document.getElementById('sticker-zoom-level'),
+        zoomValue: document.getElementById('sticker-zoom-level-value'),
+        zoomOutBtn: document.getElementById('sticker-zoom-out-btn'),
+        zoomInBtn: document.getElementById('sticker-zoom-in-btn'),
         brushModeGroup: document.getElementById('sticker-brush-mode-group'),
         eraseBrushBtn: document.getElementById('sticker-brush-erase-btn'),
         restoreBrushBtn: document.getElementById('sticker-brush-restore-btn'),
@@ -292,14 +300,50 @@ function setStickerCutoutLoading(isLoading, message = '') {
     }
 }
 
+function clampStickerCutoutZoom(value) {
+    const numericValue = Number(value || 1);
+    if (!Number.isFinite(numericValue)) return 1;
+    return Math.min(4, Math.max(1, numericValue));
+}
+
+function updateStickerCutoutZoomUI() {
+    const { zoomInput, zoomValue, zoomOutBtn, zoomInBtn } = getStickerCutoutElements();
+    const zoom = clampStickerCutoutZoom(stickerCutoutState.zoom);
+    stickerCutoutState.zoom = zoom;
+    if (zoomInput) {
+        zoomInput.value = String(zoom);
+    }
+    if (zoomValue) {
+        zoomValue.innerText = `${zoom.toFixed(1)}x`;
+    }
+    if (zoomOutBtn) {
+        zoomOutBtn.disabled = zoom <= 1;
+    }
+    if (zoomInBtn) {
+        zoomInBtn.disabled = zoom >= 4;
+    }
+}
+
+function getTouchDistance(touches) {
+    if (!touches || touches.length < 2) return 0;
+    const firstTouch = touches[0];
+    const secondTouch = touches[1];
+    const deltaX = Number(secondTouch.clientX || 0) - Number(firstTouch.clientX || 0);
+    const deltaY = Number(secondTouch.clientY || 0) - Number(firstTouch.clientY || 0);
+    return Math.hypot(deltaX, deltaY);
+}
+
 function resizeStickerCutoutCanvas() {
     const { canvas } = getStickerCutoutElements();
     if (!canvas) return;
     const shell = canvas.parentElement;
     const shellWidth = shell ? shell.clientWidth : 0;
-    const nextSize = Math.max(260, Math.min(shellWidth || 520, 520));
+    const baseSize = Math.max(260, Math.min(shellWidth || 520, 520));
+    const nextSize = Math.round(baseSize * clampStickerCutoutZoom(stickerCutoutState.zoom));
     canvas.width = nextSize;
     canvas.height = nextSize;
+    canvas.style.width = `${nextSize}px`;
+    canvas.style.height = `${nextSize}px`;
 }
 
 function ensureStickerCutoutBuffers() {
@@ -588,7 +632,9 @@ function openStickerCutoutModal(url, name = '', options = {}) {
     stickerCutoutState.isDrawing = false;
     stickerCutoutState.isDirty = false;
     stickerCutoutState.brushMode = 'add';
+    stickerCutoutState.zoom = 1;
     updateStickerCutoutBrushModeUI();
+    updateStickerCutoutZoomUI();
 
     if (heading) {
         heading.innerText = mode === 'idol' ? '涂抹裁剪人物' : '涂抹选择贴纸图案';
@@ -717,6 +763,10 @@ function setupStickerCutoutTools() {
         canvas,
         brushInput,
         brushValue,
+        zoomInput,
+        zoomValue,
+        zoomOutBtn,
+        zoomInBtn,
         eraseBrushBtn,
         restoreBrushBtn,
         closeBtn,
@@ -736,6 +786,32 @@ function setupStickerCutoutTools() {
     brushInput.addEventListener('input', syncBrushValue);
     syncBrushValue();
 
+    const applyZoom = (nextZoom) => {
+        stickerCutoutState.zoom = clampStickerCutoutZoom(nextZoom);
+        updateStickerCutoutZoomUI();
+        resizeStickerCutoutCanvas();
+        renderStickerCutoutPreview();
+    };
+
+    if (zoomInput) {
+        zoomInput.addEventListener('input', () => {
+            applyZoom(Number(zoomInput.value || 1));
+        });
+    }
+    if (zoomOutBtn) {
+        zoomOutBtn.addEventListener('click', () => {
+            applyZoom(Number((stickerCutoutState.zoom - 0.25).toFixed(2)));
+        });
+    }
+    if (zoomInBtn) {
+        zoomInBtn.addEventListener('click', () => {
+            applyZoom(Number((stickerCutoutState.zoom + 0.25).toFixed(2)));
+        });
+    }
+    if (zoomValue) {
+        updateStickerCutoutZoomUI();
+    }
+
     if (eraseBrushBtn) {
         eraseBrushBtn.addEventListener('click', () => {
             stickerCutoutState.brushMode = 'erase';
@@ -752,6 +828,8 @@ function setupStickerCutoutTools() {
 
     const beginDraw = (event) => {
         if (stickerCutoutState.isLoading) return;
+        if (stickerCutoutState.isPinching) return;
+        if (event.touches && event.touches.length > 1) return;
         event.preventDefault();
         const point = getStickerCutoutPointerPosition(event);
         if (!point) return;
@@ -762,6 +840,8 @@ function setupStickerCutoutTools() {
 
     const moveDraw = (event) => {
         if (stickerCutoutState.isLoading) return;
+        if (stickerCutoutState.isPinching) return;
+        if (event.touches && event.touches.length > 1) return;
         if (!stickerCutoutState.isDrawing) return;
         event.preventDefault();
         const point = getStickerCutoutPointerPosition(event);
@@ -775,15 +855,57 @@ function setupStickerCutoutTools() {
         stickerCutoutState.lastPoint = null;
     };
 
+    const beginPinch = (event) => {
+        if (!event.touches || event.touches.length < 2) return false;
+        event.preventDefault();
+        stickerCutoutState.isPinching = true;
+        stickerCutoutState.isDrawing = false;
+        stickerCutoutState.lastPoint = null;
+        stickerCutoutState.pinchStartDistance = getTouchDistance(event.touches);
+        stickerCutoutState.pinchStartZoom = stickerCutoutState.zoom;
+        return true;
+    };
+
+    const movePinch = (event) => {
+        if (!stickerCutoutState.isPinching) return false;
+        if (!event.touches || event.touches.length < 2) return false;
+        event.preventDefault();
+        const currentDistance = getTouchDistance(event.touches);
+        if (!currentDistance || !stickerCutoutState.pinchStartDistance) return true;
+        const nextZoom = stickerCutoutState.pinchStartZoom * (currentDistance / stickerCutoutState.pinchStartDistance);
+        applyZoom(nextZoom);
+        return true;
+    };
+
+    const endPinch = (event) => {
+        if (!stickerCutoutState.isPinching) return;
+        if (event.touches && event.touches.length >= 2) return;
+        stickerCutoutState.isPinching = false;
+        stickerCutoutState.pinchStartDistance = 0;
+        stickerCutoutState.pinchStartZoom = stickerCutoutState.zoom;
+    };
+
     canvas.addEventListener('pointerdown', beginDraw);
     canvas.addEventListener('pointermove', moveDraw);
     canvas.addEventListener('pointerup', endDraw);
     canvas.addEventListener('pointerleave', endDraw);
     canvas.addEventListener('pointercancel', endDraw);
-    canvas.addEventListener('touchstart', beginDraw, { passive: false });
-    canvas.addEventListener('touchmove', moveDraw, { passive: false });
-    canvas.addEventListener('touchend', endDraw, { passive: false });
-    canvas.addEventListener('touchcancel', endDraw, { passive: false });
+    canvas.addEventListener('touchstart', (event) => {
+        if (beginPinch(event)) return;
+        beginDraw(event);
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (event) => {
+        if (movePinch(event)) return;
+        moveDraw(event);
+    }, { passive: false });
+    canvas.addEventListener('touchend', (event) => {
+        endPinch(event);
+        endDraw();
+    }, { passive: false });
+    canvas.addEventListener('touchcancel', (event) => {
+        endPinch(event);
+        endDraw();
+    }, { passive: false });
 
     closeBtn.addEventListener('click', closeStickerCutoutModal);
     resetBtn.addEventListener('click', resetStickerCutoutMask);
