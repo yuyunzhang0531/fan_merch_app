@@ -232,7 +232,7 @@ function updateStickerCutoutBrushModeUI() {
 }
 
 function shouldBlockStickerCutoutLoading() {
-    return !(stickerCutoutState.mode === 'sticker' && isMobileLikeDevice());
+    return stickerCutoutState.mode === 'idol';
 }
 
 function setStickerCutoutLoading(isLoading, message = '') {
